@@ -11,17 +11,20 @@ if type(previousShutdown) == "function" then
     pcall(previousShutdown)
 end
 getgenv().__UrbanReloadShutdown = nil
-local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
-local Window = Rayfield:CreateWindow({
-    Name = "Urban Reload By benz",
-    LoadingTitle = "Urban Reload",
-    LoadingSubtitle = "Benz",
-    ConfigurationSaving = { Enabled = true, FolderName = "UrbanReloadCheat", FileName = "ConfigV3" },
-    Discord = { Enabled = false },
-    KeySystem = false
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+local Window = WindUI:CreateWindow({
+    Title = "rick hub I urban Reload",
+    Folder = "RickHub",
+    Size = UDim2.fromOffset(560, 430),
+    NewElements = true,
+})
+Window:Tag({
+    Title = "free v2.1.4",
+    Color = Color3.fromHex('#30ff6a'),
+    Radius = 13,
 })
 local function notify(title, content)
-    pcall(function() Rayfield:Notify({Title=title, Content=content, Duration=4}) end)
+    pcall(function() WindUI:Notify({ Title = title, Content = content, Duration = 4, Icon = "crosshair" }) end)
 end
 local function weaponsFolder()
     local w = ReplicatedStorage:FindFirstChild("Weapons")
@@ -553,7 +556,7 @@ local function espGui()
     local pg = LP:FindFirstChildOfClass("PlayerGui")
     if not pg then return nil end
     local gui = Instance.new("ScreenGui")
-    gui.Name = "UrbanReloadESP"
+    gui.Name = "RickHubESP"
     gui.ResetOnSpawn = false
     gui.IgnoreGuiInset = true
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -653,46 +656,6 @@ local function aiCharacters()
 end
 local function aiAnchor(model)
     return model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
-end
-local farmEnabled = false
-local farmRadius = 250
-local farmCache, farmCachedAt = {}, 0
-local function isZombieModel(model)
-    if not model then return false end
-    local hum = model:FindFirstChildOfClass("Humanoid")
-    if not hum then return false end
-    local function mention(s)
-        return type(s) == "string" and string.find(string.lower(s), "zombie", 1, true) ~= nil
-    end
-    if mention(model.Name) or mention(hum.DisplayName) then return true end
-    local parent = model.Parent
-    if parent and mention(parent.Name) then return true end
-    for _, d in ipairs(model:GetDescendants()) do
-        if mention(d.Name) and (d:IsA("Model") or d:IsA("ProximityPrompt")) then return true end
-        if d:IsA("ProximityPrompt") and (mention(d.ObjectText) or mention(d.ActionText)) then return true end
-    end
-    return false
-end
-local function zombieAlive(model)
-    local hum = model and model:FindFirstChildOfClass("Humanoid")
-    if not hum or hum.Health <= 0 then return false end
-    local ok, state = pcall(function() return hum:GetState() end)
-    if not ok then return true end
-    if state == Enum.HumanoidStateType.Dead or state == Enum.HumanoidStateType.Physics then
-        return false
-    end
-    return true
-end
-local function farmZombies()
-    local now = os.clock()
-    if now - farmCachedAt < 1 then return farmCache end
-    farmCachedAt = now
-    local out = {}
-    for _, d in ipairs(Workspace:GetDescendants()) do
-        if d:IsA("Model") and d.Parent and isZombieModel(d) then table.insert(out, d) end
-    end
-    farmCache = out
-    return farmCache
 end
 local function buildPlayerEntry(plr, char)
     local entry = {char = char, objects = {}}
@@ -1221,87 +1184,7 @@ task.spawn(function()
         task.wait(1)
     end
 end)
-local aimbotEnabled = false
-local aimbotFOV = 150
-local aimbotRMB = false
-local aimbotVisibleCheck = true
-local function aimPart(plr)
-    local char = plr.Character
-    if not char then return nil end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum or hum.Health <= 0 then return nil end
-    return char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
-end
-local seesFrom
-local function cameraSees(part)
-    local cam = Workspace.CurrentCamera
-    local myHrp = getHrp()
-    local origin = (cam and cam.CFrame.Position) or (myHrp and myHrp.Position) or Vector3.zero
-    return seesFrom(origin, part.Position, part.Parent, part)
-end
-local function isVisible(part)
-    if not aimbotVisibleCheck then return true end
-    return cameraSees(part)
-end
-local function aimPartForChar(char)
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if not hum or hum.Health <= 0 then return nil end
-    return char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart
-end
-local function getClosestEnemy(fov)
-    local cam = Workspace.CurrentCamera
-    if not cam then return nil end
-    local center = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
-    local best, bestDist = nil, fov or aimbotFOV
-    local function consider(part)
-        if not part then return end
-        local pos, onScreen = cam:WorldToViewportPoint(part.Position)
-        if not onScreen then return end
-        local d = (Vector2.new(pos.X,pos.Y)-center).Magnitude
-        if d < bestDist and isVisible(part) then
-            bestDist = d
-            best = part
-        end
-    end
-    for _,plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LP then consider(aimPart(plr)) end
-    end
-    if farmEnabled then
-        for _,model in ipairs(farmZombies()) do
-            if zombieAlive(model) then consider(aimPartForChar(model)) end
-        end
-    elseif ESP.AI then
-        for _,model in ipairs(aiCharacters()) do
-            consider(aimPartForChar(model))
-        end
-    end
-    return best
-end
-local mouseMoverelWarned = false
-RunService:BindToRenderStep("UrbanAimbot2", Enum.RenderPriority.Camera.Value + 1, function()
-    if not aimbotEnabled then return end
-    if aimbotRMB and not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
-    local part = getClosestEnemy()
-    if not part then return end
-    local cam = Workspace.CurrentCamera
-    if not cam then return end
-    local viewport = cam.ViewportSize
-    if viewport.Y <= 0 then return end
-    local pixelsPerRadian = (viewport.Y / 2) / math.tan(math.rad(cam.FieldOfView) / 2)
-    local rel = cam.CFrame:PointToObjectSpace(part.Position)
-    if rel.Z > -0.5 then return end 
-    local yaw = math.atan2(rel.X, -rel.Z)
-    local pitch = math.atan2(rel.Y, math.sqrt(rel.X*rel.X + rel.Z*rel.Z))
-    local dx = math.round(yaw * pixelsPerRadian)
-    local dy = math.round(-pitch * pixelsPerRadian)
-    if dx == 0 and dy == 0 then return end
-    local ok = pcall(function() mousemoverel(dx, dy) end)
-    if not ok and not mouseMoverelWarned then
-        mouseMoverelWarned = true
-        notify("Aimbot", "mousemoverel is unavailable in this executor")
-    end
-end)
-local fovCircleEnabled = false
+local silentFov, silentCircleEnabled = 90, true
 local fovCircleGui, fovCircleFrame
 local function destroyFovCircle()
     if fovCircleGui then
@@ -1318,7 +1201,7 @@ local function ensureFovCircle()
     local pg = LP:FindFirstChildOfClass("PlayerGui")
     if not pg then return nil end
     local gui = Instance.new("ScreenGui")
-    gui.Name = "UrbanReloadFOV"
+    gui.Name = "RickHubFOV"
     gui.ResetOnSpawn = false
     gui.IgnoreGuiInset = true
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -1335,40 +1218,49 @@ local function ensureFovCircle()
     corner.Parent = frame
     local stroke = Instance.new("UIStroke")
     stroke.Thickness = 1.5
-    stroke.Color = Color3.fromRGB(255,255,255)
-    stroke.Transparency = 0.25
+    stroke.Color = Color3.fromHex('#30ff6a')
+    stroke.Transparency = 0.2
     stroke.Parent = frame
     frame.Parent = gui
     fovCircleGui = gui
     fovCircleFrame = frame
     return frame
 end
-local silentFov, silentCircleEnabled = 90, false
-RunService.RenderStepped:Connect(function()
-    local cam = Workspace.CurrentCamera
-    local radius
-    if fovCircleEnabled then
-        radius = aimbotFOV
-    elseif silentCircleEnabled and cam then
-        local vpY = cam.ViewportSize.Y
-        if vpY > 0 then
-            local focal = (vpY / 2) / math.tan(math.rad(cam.FieldOfView) / 2)
-            radius = math.tan(math.rad(math.min(silentFov, 89))) * focal
-        end
+local targetLineGui, targetLineFrame
+local function destroyTargetLine()
+    if targetLineGui then
+        pcall(function() targetLineGui:Destroy() end)
     end
-    if not radius then
-        if fovCircleGui then destroyFovCircle() end
-        return
+    targetLineGui = nil
+    targetLineFrame = nil
+end
+local function ensureTargetLine()
+    if targetLineGui and targetLineGui.Parent and targetLineFrame then
+        return targetLineFrame
     end
-    if not cam then return end
-    local frame = ensureFovCircle()
-    if not frame then return end
-    local vp = cam.ViewportSize
-    if vp.Y <= 0 then return end
-    local diameter = math.max(radius * 2, 2)
-    frame.Size = UDim2.fromOffset(diameter, diameter)
-    frame.Position = UDim2.fromOffset(vp.X/2, vp.Y/2)
-end)
+    destroyTargetLine()
+    local pg = LP:FindFirstChildOfClass("PlayerGui")
+    if not pg then return nil end
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "RickHubTargetLine"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    gui.DisplayOrder = 11
+    gui.Parent = pg
+    local frame = Instance.new("Frame")
+    frame.Name = "TargetLine"
+    frame.AnchorPoint = Vector2.new(0.5, 0.5)
+    frame.BackgroundColor3 = Color3.fromHex('#30ff6a')
+    frame.BackgroundTransparency = 0.15
+    frame.BorderSizePixel = 0
+    frame.Visible = false
+    frame.ZIndex = 6
+    frame.Parent = gui
+    targetLineGui = gui
+    targetLineFrame = frame
+    return frame
+end
 RunService.RenderStepped:Connect(function(dt)
     if not spinbot then
         if spinbotHum then
@@ -1393,11 +1285,11 @@ RunService.RenderStepped:Connect(function(dt)
         hrp.AssemblyLinearVelocity = vel
     end
 end)
-local CombatTab = Window:CreateTab("Combat", 4483362458)
-local RageTab = Window:CreateTab("Rage", 4483362458)
-local EspTab = Window:CreateTab("ESP", 4483362458)
-local TpTab = Window:CreateTab("Teleport", 4483362458)
-local MoveTab = Window:CreateTab("Movement", 4483362458)
+local CombatTab = Window:Tab({ Title = "Combat", Icon = "zap" })
+local RageTab = Window:Tab({ Title = "Silent Aim", Icon = "crosshair" })
+local EspTab = Window:Tab({ Title = "ESP", Icon = "eye" })
+local TpTab = Window:Tab({ Title = "Teleport", Icon = "map-pin" })
+local MoveTab = Window:Tab({ Title = "Movement", Icon = "move" })
 local silentAim = false
 local silentPart = "Head"
 local silentRMB = false 
@@ -1464,7 +1356,7 @@ local function rebuildHitCaches()
     end
 end
 seesFrom = function(origin, pos, char, part, visibleCheck)
-    if visibleCheck == nil then visibleCheck = aimbotVisibleCheck end
+    if visibleCheck == nil then visibleCheck = true end
     if not visibleCheck then return true end
     rebuildHitCaches()
     local hit = Workspace:Raycast(origin, pos - origin, rayParams)
@@ -1521,16 +1413,10 @@ local function silentAimTarget()
             table.insert(candidates, { angle = angle, char = char, pos = pos })
         end
     end
-    if not farmEnabled then
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LP then consider(plr.Character) end
-        end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LP then consider(plr.Character) end
     end
-    if farmEnabled then
-        for _, model in ipairs(farmZombies()) do
-            if zombieAlive(model) then consider(model) end
-        end
-    elseif ESP.AI then
+    if ESP.AI then
         for _, model in ipairs(aiCharacters()) do
             consider(model)
         end
@@ -1585,169 +1471,81 @@ local function installSilentAim()
         return old(self, ...)
     end)
 end
-local aimbotToggle, rmbToggle, reloadToggle, ammoToggle, silentToggle, visToggle, lootToggle, collectToggle
-local farmSaved = {}
-local function syncToggle(toggleObj, want)
-    if toggleObj and type(toggleObj.Set) == "function" then
-        pcall(toggleObj.Set, toggleObj, want)
-    end
-end
-local function pressPrompt(prompt)
-    if type(fireproximityprompt) == "function" and pcall(fireproximityprompt, prompt) then
-        return
-    end
-    pcall(function()
-        prompt:InputHoldBegin()
-        prompt:InputHoldEnd()
-    end)
-end
-local function farmInteract(model)
-    for _, d in ipairs(model:GetDescendants()) do
-        if d:IsA("ProximityPrompt") and d.Enabled then
-            pressPrompt(d)
+
+RunService.RenderStepped:Connect(function()
+    local cam = Workspace.CurrentCamera
+    local radius
+    if silentCircleEnabled and cam then
+        local vpY = cam.ViewportSize.Y
+        if vpY > 0 then
+            local focal = (vpY / 2) / math.tan(math.rad(cam.FieldOfView) / 2)
+            radius = math.tan(math.rad(math.min(silentFov, 89))) * focal
         end
     end
-end
-local function farmMouse(button, down)
-    local cam = Workspace.CurrentCamera
-    local vp = (cam and cam.ViewportSize) or Vector2.new(400, 400)
-    return pcall(function()
-        game:GetService("VirtualInputManager"):SendMouseButtonEvent(vp.X/2, vp.Y/2, button, down, game, 1)
-    end)
-end
-local function farmFire()
-    if not farmMouse(0, true) then
-        if type(mouse1click) == "function" then pcall(mouse1click) end
-        return
+    if not radius then
+        if fovCircleGui then destroyFovCircle() end
+    else
+        local circle = ensureFovCircle()
+        if circle then
+            local vp = cam.ViewportSize
+            if vp.Y > 0 then
+                local diameter = math.max(radius * 2, 2)
+                circle.Size = UDim2.fromOffset(diameter, diameter)
+                circle.Position = UDim2.fromOffset(vp.X / 2, vp.Y / 2)
+            end
+        end
     end
-    task.wait(0.03)
-    farmMouse(0, false)
-    task.wait(0.03)
-    farmMouse(0, true)
-end
-local function farmPressE()
-    if type(keypress) == "function" then
-        pcall(keypress, Enum.KeyCode.E)
-        pcall(keyrelease or keypress, Enum.KeyCode.E)
-        return
-    end
-    pcall(function()
-        local vim = game:GetService("VirtualInputManager")
-        vim:SendKeyEvent(true, Enum.KeyCode.E, false, false)
-        vim:SendKeyEvent(false, Enum.KeyCode.E, false, false)
-    end)
-end
-local function farmVisibleTarget()
-    local origin = aimOrigin()
-    if not origin then return nil end
-    for _, model in ipairs(farmZombies()) do
-        if zombieAlive(model) then
-            local part = model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
-            if part then
-                local pos = part.Position
-                if (pos - origin).Magnitude <= farmRadius and silentAimVisible(model, origin, pos) then
-                    return part
+    local line
+    if silentAim and (not silentRMB or silentRMBHeld) and cam then
+        local pos = silentAimTarget()
+        if pos then
+            local sp, onScreen = cam:WorldToViewportPoint(pos)
+            if onScreen and sp.Z > 0 then
+                local vp = cam.ViewportSize
+                local sx, sy = vp.X * 0.5, vp.Y * 0.5
+                local dx, dy = sp.X - sx, sp.Y - sy
+                local length = math.sqrt(dx * dx + dy * dy)
+                if length > 4 then
+                    line = ensureTargetLine()
+                    if line then
+                        line.Visible = true
+                        line.Position = UDim2.fromOffset((sx + sp.X) * 0.5, (sy + sp.Y) * 0.5)
+                        line.Size = UDim2.fromOffset(length, 1.5)
+                        line.Rotation = math.deg(math.atan2(dy, dx))
+                    end
                 end
             end
         end
     end
-    return nil
-end
-local function doAutoFarm()
-    local hrp = getHrp()
-    if not hrp then return end
-    if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
-        farmRMB(true)
+    if not line and targetLineFrame then
+        targetLineFrame.Visible = false
     end
-    local inReach = false
-    for _, model in ipairs(farmZombies()) do
-        local anchor = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head") or model.PrimaryPart
-        if anchor and (anchor.Position - hrp.Position).Magnitude <= farmRadius then
-            inReach = true
-            farmInteract(model)
-        end
-    end
-    if inReach then farmPressE() end
-    if farmVisibleTarget() then farmFire() end
-end
-local function farmRMB(down)
-    if farmMouse(1, down) then return end
-    if down then
-        if type(mouse2press) == "function" then pcall(mouse2press) end
-    elseif type(mouse2release) == "function" then
-        pcall(mouse2release)
-    end
-end
-local function applyFarmSupport(on)
-    aimbotEnabled = on and false or farmSaved.aimbot
-    silentAim = on and true or farmSaved.silent
-    if silentAim then installSilentAim() end
-    aimbotVisibleCheck = on and true or farmSaved.visible
-    instantReload = on and true or farmSaved.reload
-    infAmmo = on and true or farmSaved.ammo
+end)
+
+CombatTab:Section({ Title = "Weapon" })
+CombatTab:Toggle({ Title = "Instant Reload", Value = false, Callback = function(v)
+    instantReload = v
     reapplyWeaponTuning()
-    if instantReload then startLoop("WeaponTune", 0.5, reapplyWeaponTuning) end
-    farmRMB(on)
-    farmMouse(0, on)
-    autoLoot = on and true or farmSaved.loot
-    autoCollect = on and true or farmSaved.collect
-    if autoLoot then startLoop("AutoLoot", 0.35, doAutoLoot) else stopLoop("AutoLoot") end
-    if autoCollect then startLoop("AutoCollect", 0.3, doAutoCollect) else stopLoop("AutoCollect") end
-    syncToggle(lootToggle, autoLoot)
-    syncToggle(collectToggle, autoCollect)
-    syncToggle(aimbotToggle, aimbotEnabled)
-    syncToggle(silentToggle, silentAim)
-    syncToggle(visToggle, aimbotVisibleCheck)
-    syncToggle(reloadToggle, instantReload)
-    syncToggle(ammoToggle, infAmmo)
-end
-local function startFarm()
-    farmSaved = {
-        aimbot = aimbotEnabled,
-        silent = silentAim,
-        visible = aimbotVisibleCheck,
-        reload = instantReload,
-        ammo = infAmmo,
-        loot = autoLoot,
-        collect = autoCollect,
-    }
-    applyFarmSupport(true)
-    startLoop("AutoFarm", 0.15, doAutoFarm)
-end
-local function stopFarm()
-    stopLoop("AutoFarm")
-    applyFarmSupport(false)
-end
-CombatTab:CreateSection("Aimbot")
-aimbotToggle = CombatTab:CreateToggle({Name="Aimbot",CurrentValue=false,Flag="Aimbot",Callback=function(v) aimbotEnabled=v end})
-CombatTab:CreateSlider({Name="Aimbot FOV",Range={30,400},Increment=5,Suffix="px",CurrentValue=150,Flag="AimbotFOV",Callback=function(v) aimbotFOV=v end})
-CombatTab:CreateToggle({Name="FOV Circle",CurrentValue=false,Flag="FOVCircle",Callback=function(v) fovCircleEnabled=v end})
-rmbToggle = CombatTab:CreateToggle({Name="Aim on RMB",CurrentValue=false,Flag="AimbotRMB",Callback=function(v) aimbotRMB=v end})
-visToggle = CombatTab:CreateToggle({Name="Visible Check",CurrentValue=true,Flag="AimbotVis",Callback=function(v) aimbotVisibleCheck=v end})
-CombatTab:CreateSection("Weapon")
-reloadToggle = CombatTab:CreateToggle({Name="Instant Reload",CurrentValue=false,Flag="InstantReload",Callback=function(v)
-    instantReload=v
+    startLoop("WeaponTune", 0.5, reapplyWeaponTuning)
+end })
+CombatTab:Toggle({ Title = "Rapid Fire", Value = false, Callback = function(v)
+    rapidFire = v
     reapplyWeaponTuning()
-    startLoop("WeaponTune",0.5,reapplyWeaponTuning)
-end})
-CombatTab:CreateToggle({Name="Rapid Fire",CurrentValue=false,Flag="RapidFire",Callback=function(v)
-    rapidFire=v
-    reapplyWeaponTuning()
-    startLoop("WeaponTune",0.5,reapplyWeaponTuning)
-end})
-CombatTab:CreateSlider({Name="Rapid Fire RPM",Range={200,2000},Increment=25,Suffix="rpm",CurrentValue=1200,Flag="RapidFireRPM",Callback=function(v)
-    rapidFireRPM=v
+    startLoop("WeaponTune", 0.5, reapplyWeaponTuning)
+end })
+CombatTab:Slider({ Title = "Rapid Fire RPM", Step = 25, Value = { Min = 200, Max = 2000, Default = 1200 }, Callback = function(v)
+    rapidFireRPM = v
     if rapidFire then reapplyWeaponTuning() end
-end})
-CombatTab:CreateToggle({Name="Full Auto",CurrentValue=false,Flag="FullAuto",Callback=function(v)
-    fullAuto=v
+end })
+CombatTab:Toggle({ Title = "Full Auto", Value = false, Callback = function(v)
+    fullAuto = v
     reapplyWeaponTuning()
-    startLoop("WeaponTune",0.5,reapplyWeaponTuning)
-end})
-ammoToggle = CombatTab:CreateToggle({Name="Inf Ammo",CurrentValue=true,Flag="InfAmmo",Callback=function(v)
-    infAmmo=v
+    startLoop("WeaponTune", 0.5, reapplyWeaponTuning)
+end })
+CombatTab:Toggle({ Title = "Inf Ammo", Value = true, Callback = function(v)
+    infAmmo = v
     applyInfiniteAmmo(v)
-end})
+end })
 local recoilTables, bloomTables = {}, {}
 local gcSwept, gcTool = false, nil
 local function sweepWeaponTables()
@@ -1807,11 +1605,11 @@ local function refreshWeaponTableCache()
         sweepWeaponTables()
     end
 end
-CombatTab:CreateToggle({Name="No Recoil",CurrentValue=false,Flag="NoRecoil",Callback=function(v)
+CombatTab:Toggle({ Title = "No Recoil", Value = false, Callback = function(v)
     if v then
         refreshWeaponTableCache()
         zeroRecoil()
-        startLoop("NoRecoil",0.75,function()
+        startLoop("NoRecoil", 0.75, function()
             refreshWeaponTableCache()
             zeroRecoil()
             patchWeaponConfig()
@@ -1819,12 +1617,12 @@ CombatTab:CreateToggle({Name="No Recoil",CurrentValue=false,Flag="NoRecoil",Call
     else
         stopLoop("NoRecoil")
     end
-end})
-CombatTab:CreateToggle({Name="No Spread",CurrentValue=false,Flag="NoSpread",Callback=function(v)
+end })
+CombatTab:Toggle({ Title = "No Spread", Value = false, Callback = function(v)
     if v then
         refreshWeaponTableCache()
         zeroBloom()
-        startLoop("NoSpread",0.75,function()
+        startLoop("NoSpread", 0.75, function()
             refreshWeaponTableCache()
             zeroBloom()
             patchWeaponConfig()
@@ -1833,7 +1631,7 @@ CombatTab:CreateToggle({Name="No Spread",CurrentValue=false,Flag="NoSpread",Call
                 local cs = w and w:FindFirstChild("ClientState")
                 if cs then
                     local mod = require(cs)
-                    setreadonly(mod,false)
+                    setreadonly(mod, false)
                     mod.SpreadMultiplier = 0
                     mod.Spread = 0
                     mod.SpreadRest = 0
@@ -1843,144 +1641,141 @@ CombatTab:CreateToggle({Name="No Spread",CurrentValue=false,Flag="NoSpread",Call
     else
         stopLoop("NoSpread")
     end
-end})
-CombatTab:CreateSection("Antihit")
-CombatTab:CreateToggle({Name="Spinbot",CurrentValue=false,Flag="Spinbot",Callback=function(v) spinbot=v end})
-CombatTab:CreateSlider({Name="Spin Speed",Range={1,50},Increment=1,Suffix="spd",CurrentValue=10,Flag="SpinSpeed",Callback=function(v) spinSpeed=v end})
-RageTab:CreateSection("Silent Aim")
-silentToggle = RageTab:CreateToggle({Name="Silent Aim",CurrentValue=false,Flag="SilentAim",Callback=function(v)
-    silentAim=v
+end })
+CombatTab:Section({ Title = "Antihit" })
+CombatTab:Toggle({ Title = "Spinbot", Value = false, Callback = function(v) spinbot = v end })
+CombatTab:Slider({ Title = "Spin Speed", Step = 1, Value = { Min = 1, Max = 50, Default = 10 }, Callback = function(v) spinSpeed = v end })
+RageTab:Section({ Title = "Silent Aim" })
+RageTab:Toggle({ Title = "Silent Aim", Value = false, Callback = function(v)
+    silentAim = v
     if v then installSilentAim() end
-end})
-RageTab:CreateSlider({Name="Rage FOV",Range={5,180},Increment=5,Suffix="deg",CurrentValue=90,Flag="SilentFOV",Callback=function(v)
-    silentFov=v
-end})
-RageTab:CreateToggle({Name="FOV Circle",CurrentValue=false,Flag="RageFOVCircle",Callback=function(v) silentCircleEnabled=v end})
-RageTab:CreateToggle({Name="Aim on RMB",CurrentValue=false,Flag="SilentRMB",Callback=function(v) silentRMB=v end})
-RageTab:CreateToggle({Name="Visible Check",CurrentValue=true,Flag="SilentVis",Callback=function(v) silentVisibleCheck=v end})
-RageTab:CreateDropdown({Name="Hit Part",Options={"Head","HumanoidRootPart","UpperTorso","LowerTorso"},CurrentOption={"Head"},MultipleOptions=false,Flag="SilentPart",Callback=function(v)
-    silentPart = (type(v)=="table" and v[1]) or v
-end})
-EspTab:CreateSection("ESP Settings")
-EspTab:CreateToggle({Name="ESP Enabled",CurrentValue=false,Flag="ESP",Callback=function(v)
-    ESP.Enabled=v
+end })
+RageTab:Slider({ Title = "Aim FOV (deg)", Step = 5, Value = { Min = 5, Max = 180, Default = 90 }, Callback = function(v)
+    silentFov = v
+end })
+RageTab:Toggle({ Title = "FOV Circle", Value = true, Callback = function(v) silentCircleEnabled = v end })
+RageTab:Toggle({ Title = "Aim on RMB", Value = false, Callback = function(v) silentRMB = v end })
+RageTab:Dropdown({ Title = "Hit Part", Values = { "Head", "HumanoidRootPart", "UpperTorso", "LowerTorso" }, Value = 1, Callback = function(v)
+    silentPart = (type(v) == "table" and v[1]) or v
+end })
+EspTab:Section({ Title = "ESP Settings" })
+EspTab:Toggle({ Title = "ESP Enabled", Value = false, Callback = function(v)
+    ESP.Enabled = v
     refreshESP()
-end})
-EspTab:CreateToggle({Name="Players",CurrentValue=true,Flag="ESP Players",Callback=function(v)
-    ESP.Players=v
+end })
+EspTab:Toggle({ Title = "Players", Value = true, Callback = function(v)
+    ESP.Players = v
     if ESP.Enabled then refreshESP() end
-end})
-EspTab:CreateToggle({Name="Vehicles",CurrentValue=false,Flag="ESP Vehicles",Callback=function(v)
-    ESP.Vehicles=v
+end })
+EspTab:Toggle({ Title = "Vehicles", Value = false, Callback = function(v)
+    ESP.Vehicles = v
     if ESP.Enabled then refreshESP() end
-end})
-EspTab:CreateToggle({Name="AIs",CurrentValue=false,Flag="ESP AIs",Callback=function(v)
-    ESP.AI=v
+end })
+EspTab:Toggle({ Title = "AIs", Value = false, Callback = function(v)
+    ESP.AI = v
     if ESP.Enabled then refreshESP() end
-end})
-EspTab:CreateDropdown({Name="Style",Options={"Highlight","None"},CurrentOption={"Highlight"},MultipleOptions=false,Flag="ESP Style",Callback=function(v)
-    ESP.Style = (type(v)=="table" and v[1]) or v
+end })
+EspTab:Dropdown({ Title = "Style", Values = { "Highlight", "None" }, Value = 1, Callback = function(v)
+    ESP.Style = (type(v) == "table" and v[1]) or v
     if ESP.Enabled then refreshESP() end
-end})
-EspTab:CreateSection("Look")
-EspTab:CreateToggle({Name="Fullbright",CurrentValue=false,Flag="Fullbright",Callback=function(v)
-    fullbright=v
+end })
+EspTab:Section({ Title = "Look" })
+EspTab:Toggle({ Title = "Fullbright", Value = false, Callback = function(v)
+    fullbright = v
     applyFullbright(v)
-end})
-EspTab:CreateToggle({Name="Team Colors",CurrentValue=true,Flag="ESP Team Colors",Callback=function(v)
-    ESP.TeamColors=v
-end})
-EspTab:CreateToggle({Name="Names",CurrentValue=true,Flag="ESP Names",Callback=function(v) ESP.ShowName=v end})
-EspTab:CreateToggle({Name="Health",CurrentValue=true,Flag="ESP Health",Callback=function(v) ESP.ShowHealth=v end})
-EspTab:CreateToggle({Name="Distance",CurrentValue=true,Flag="ESP Distance",Callback=function(v) ESP.ShowDistance=v end})
-EspTab:CreateToggle({Name="Boxes",CurrentValue=false,Flag="ESP Boxes",Callback=function(v)
-    ESP.Boxes=v
+end })
+EspTab:Toggle({ Title = "Team Colors", Value = true, Callback = function(v) ESP.TeamColors = v end })
+EspTab:Toggle({ Title = "Names", Value = true, Callback = function(v) ESP.ShowName = v end })
+EspTab:Toggle({ Title = "Health", Value = true, Callback = function(v) ESP.ShowHealth = v end })
+EspTab:Toggle({ Title = "Distance", Value = true, Callback = function(v) ESP.ShowDistance = v end })
+EspTab:Toggle({ Title = "Boxes", Value = false, Callback = function(v)
+    ESP.Boxes = v
     if ESP.Enabled then refreshESP() end
-end})
-EspTab:CreateToggle({Name="Tracers",CurrentValue=false,Flag="ESP Tracers",Callback=function(v)
-    ESP.Tracers=v
+end })
+EspTab:Toggle({ Title = "Tracers", Value = false, Callback = function(v)
+    ESP.Tracers = v
     if ESP.Enabled then refreshESP() end
-end})
-EspTab:CreateSection("Loot")
-EspTab:CreateToggle({Name="ATM ESP",CurrentValue=false,Flag="ESP Money",Callback=function(v)
-    ESP.Money=v
+end })
+EspTab:Section({ Title = "Loot" })
+EspTab:Toggle({ Title = "ATM ESP", Value = false, Callback = function(v)
+    ESP.Money = v
     if ESP.Enabled then refreshESP() end
-end})
-lootToggle = EspTab:CreateToggle({Name="Auto Loot",CurrentValue=false,Flag="AutoLoot",Callback=function(v)
-    autoLoot=v
-    if v then startLoop("AutoLoot",0.35,doAutoLoot) else stopLoop("AutoLoot") end
-end})
-EspTab:CreateSlider({Name="Loot Radius",Range={10,300},Increment=5,Suffix="m",CurrentValue=60,Flag="LootRadius",Callback=function(v)
-    autoLootRadius=v
-end})
-collectToggle = EspTab:CreateToggle({Name="Auto Collect",CurrentValue=false,Flag="AutoCollect",Callback=function(v)
-    autoCollect=v
-    if v then startLoop("AutoCollect",0.3,doAutoCollect) else stopLoop("AutoCollect") end
-end})
-EspTab:CreateSlider({Name="Collect Radius",Range={5,40},Increment=1,Suffix="m",CurrentValue=20,Flag="CollectRadius",Callback=function(v)
-    collectRadius=v
-end})
-TpTab:CreateSection("Teleport")
-TpTab:CreateButton({Name="Teleport to Nearest Player",Callback=function()
+end })
+EspTab:Toggle({ Title = "Auto Loot", Value = false, Callback = function(v)
+    autoLoot = v
+    if v then startLoop("AutoLoot", 0.35, doAutoLoot) else stopLoop("AutoLoot") end
+end })
+EspTab:Slider({ Title = "Loot Radius (m)", Step = 5, Value = { Min = 10, Max = 300, Default = 60 }, Callback = function(v)
+    autoLootRadius = v
+end })
+EspTab:Toggle({ Title = "Auto Collect", Value = false, Callback = function(v)
+    autoCollect = v
+    if v then startLoop("AutoCollect", 0.3, doAutoCollect) else stopLoop("AutoCollect") end
+end })
+EspTab:Slider({ Title = "Collect Radius (m)", Step = 1, Value = { Min = 5, Max = 40, Default = 20 }, Callback = function(v)
+    collectRadius = v
+end })
+TpTab:Section({ Title = "Teleport" })
+TpTab:Button({ Title = "Teleport to Nearest Player", Callback = function()
     local best, bestDist = nil, math.huge
     local myHrp = getHrp()
     if not myHrp then return end
-    for _,plr in ipairs(Players:GetPlayers()) do
+    for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LP and plr.Character then
             local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
             if hrp then
-                local d = (hrp.Position-myHrp.Position).Magnitude
+                local d = (hrp.Position - myHrp.Position).Magnitude
                 if d < bestDist then bestDist = d; best = hrp end
             end
         end
     end
-    if best then myHrp.CFrame = CFrame.new(best.Position + Vector3.new(0,3,0)) end
-end})
-TpTab:CreateButton({Name="Teleport to Random Player",Callback=function()
+    if best then myHrp.CFrame = CFrame.new(best.Position + Vector3.new(0, 3, 0)) end
+end })
+TpTab:Button({ Title = "Teleport to Random Player", Callback = function()
     local list = {}
-    for _,plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LP and plr.Character then table.insert(list,plr) end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LP and plr.Character then table.insert(list, plr) end
     end
     if #list == 0 then return end
-    local plr = list[math.random(1,#list)]
+    local plr = list[math.random(1, #list)]
     local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
     local myHrp = getHrp()
-    if hrp and myHrp then myHrp.CFrame = CFrame.new(hrp.Position + Vector3.new(0,3,0)) end
-end})
-MoveTab:CreateSection("Movement")
-MoveTab:CreateToggle({Name="Speed",CurrentValue=false,Flag="Speed",Callback=function(v)
-    speedEnabled=v
+    if hrp and myHrp then myHrp.CFrame = CFrame.new(hrp.Position + Vector3.new(0, 3, 0)) end
+end })
+MoveTab:Section({ Title = "Movement" })
+MoveTab:Toggle({ Title = "Speed", Value = false, Callback = function(v)
+    speedEnabled = v
     if v then
-        startLoop("Speed",0.2,applySpeed)
+        startLoop("Speed", 0.2, applySpeed)
     else
         stopLoop("Speed")
         applySpeed()
     end
-end})
-MoveTab:CreateSlider({Name="Speed Value",Range={16,200},Increment=2,Suffix="ws",CurrentValue=45,Flag="SpeedValue",Callback=function(v)
-    speedValue=v
+end })
+MoveTab:Slider({ Title = "Speed Value (ws)", Step = 2, Value = { Min = 16, Max = 200, Default = 45 }, Callback = function(v)
+    speedValue = v
     if speedEnabled then applySpeed() end
-end})
-MoveTab:CreateToggle({Name="Inf Stamina",CurrentValue=false,Flag="InfStamina",Callback=function(v)
-    infStamina=v
+end })
+MoveTab:Toggle({ Title = "Inf Stamina", Value = false, Callback = function(v)
+    infStamina = v
     if v then
-        startLoop("Stamina",0.25,stompStamina)
+        startLoop("Stamina", 0.25, stompStamina)
     else
         stopLoop("Stamina")
         restoreStamina()
     end
-end})
-MoveTab:CreateToggle({Name="Bunny Hop",CurrentValue=false,Flag="BunnyHop",Callback=function(v)
-    bhop=v
+end })
+MoveTab:Toggle({ Title = "Bunny Hop", Value = false, Callback = function(v)
+    bhop = v
     if v then
-        startLoop("Bhop",0.05,function()
+        startLoop("Bhop", 0.05, function()
             local h = liveHum()
             if h then h.Jump = true end
         end)
     else
         stopLoop("Bhop")
     end
-end})
+end })
 UserInputService.JumpRequest:Connect(function()
     if not bhop then return end
     local h = liveHum()
@@ -2004,10 +1799,8 @@ Players.PlayerRemoving:Connect(function(plr)
     end
 end)
 local function shutdown()
-    aimbotEnabled = false
     silentAim = false
     spinbot = false
-    farmEnabled = false
     bhop = false
     for key in pairs(loopTokens) do loopTokens[key] = nil end
     ESP.Enabled = false
@@ -2021,9 +1814,7 @@ local function shutdown()
         end
     end)
     pcall(destroyFovCircle)
-    pcall(function() RunService:UnbindFromRenderStep("UrbanAimbot2") end)
-    pcall(farmRMB, false)
-    pcall(farmMouse, 0, false)
+    pcall(destroyTargetLine)
     instantReload = false
     rapidFire = false
     fullAuto = false
@@ -2035,17 +1826,13 @@ local function shutdown()
     pcall(function()
         local pg = LP:FindFirstChildOfClass("PlayerGui")
         if not pg then return end
-        for _, name in ipairs({ "UrbanReloadESP", "UrbanReloadFOV" }) do
+        for _, name in ipairs({ "RickHubESP", "RickHubFOV", "RickHubTargetLine" }) do
             local gui = pg:FindFirstChild(name)
             if gui then gui:Destroy() end
         end
     end)
-    pcall(function()
-        local host = (gethui and gethui()) or LP:FindFirstChildOfClass("PlayerGui")
-        local sg = host and host:FindFirstChild("Rayfield")
-        if sg then sg:Destroy() end
-    end)
+    pcall(function() Window:Destroy() end)
 end
 getgenv().__UrbanReloadShutdown = shutdown
-print("[UrbanReload] v3 loaded - tabs: Combat, Rage, ESP, Teleport, Movement")
-notify("Loaded v3", "Urban Reload cheat ready.")
+print("[RickHub] v2.1.4 loaded - tabs: Combat, Silent Aim, ESP, Teleport, Movement")
+notify("Rick Hub free v2.1.4", "Urban Reload listo: Silent Aim activo.")
