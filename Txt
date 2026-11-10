@@ -530,104 +530,7 @@ end
 local function stopLoop(key)
     loopTokens[key] = nil
 end
-local ESP = {
-    Enabled = false,
-    Players = true,
-    Vehicles = false,
-    Style = "Highlight",
-    ShowName = true,
-    ShowHealth = true,
-    ShowDistance = true,
-    TeamColors = true,
-    Tracers = false,
-    Boxes = false,
-    playerEntries = {},
-    vehicleEntries = {},
-    Money = false,
-    moneyEntries = {},
-    atmEntries = {},
-    AI = false,
-    aiEntries = {},
-    gui = nil,
-}
-local function espGui()
-    if ESP.gui and ESP.gui.Parent then return ESP.gui end
-    ESP.gui = nil
-    local pg = LP:FindFirstChildOfClass("PlayerGui")
-    if not pg then return nil end
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "RickHubESP"
-    gui.ResetOnSpawn = false
-    gui.IgnoreGuiInset = true
-    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    gui.Parent = pg
-    ESP.gui = gui
-    return gui
-end
-local function espColor(plr)
-    if ESP.TeamColors and plr and plr.Team then
-        return plr.Team.TeamColor.Color
-    end
-    return Color3.fromRGB(255,60,60)
-end
-local function makeLabel(adornee, offset, width, height, textSize)
-    if not adornee then return nil, nil end
-    local bb = Instance.new("BillboardGui")
-    bb.Name = "UrbanReloadLabel"
-    bb.Size = UDim2.new(0,width,0,height)
-    bb.StudsOffset = offset
-    bb.AlwaysOnTop = true
-    bb.Parent = adornee
-    local txt = Instance.new("TextLabel")
-    txt.Size = UDim2.new(1,0,1,0)
-    txt.BackgroundTransparency = 1
-    txt.TextColor3 = Color3.new(1,1,1)
-    txt.TextStrokeTransparency = 0
-    txt.Font = Enum.Font.GothamBold
-    txt.TextSize = textSize
-    txt.Text = ""
-    txt.Parent = bb
-    return bb, txt
-end
-local function makeBoxFrame()
-    local gui = espGui()
-    if not gui then return nil end
-    local f = Instance.new("Frame")
-    f.Name = "UrbanReloadBox"
-    f.AnchorPoint = Vector2.new(0,0)
-    f.BackgroundTransparency = 1
-    f.BorderSizePixel = 0
-    f.Visible = false
-    f.ZIndex = 2
-    local stroke = Instance.new("UIStroke")
-    stroke.Name = "Outline"
-    stroke.Thickness = 1.5
-    stroke.Color = Color3.fromRGB(255,60,60)
-    stroke.Parent = f
-    f.Parent = gui
-    return f
-end
-local function makeTracerFrame()
-    local gui = espGui()
-    if not gui then return nil end
-    local f = Instance.new("Frame")
-    f.Name = "UrbanReloadTracer"
-    f.AnchorPoint = Vector2.new(0.5,0.5)
-    f.BorderSizePixel = 0
-    f.BackgroundColor3 = Color3.fromRGB(255,60,60)
-    f.Visible = false
-    f.ZIndex = 3
-    f.Parent = gui
-    return f
-end
-local function destroyEntry(entry)
-    if not entry then return end
-    for _,obj in ipairs(entry.objects or {}) do
-        pcall(function() obj:Destroy() end)
-    end
-    entry.objects = nil
-end
-local buildAIEntry, updateAIEntry
+local ESP = { Enabled = false, Players = true, AI = false, ShowName = true, ShowWeapon = true, ShowHealth = true, MaxDistance = 500 }
 local aiCache, aiCachedAt = {}, 0
 local function playerCharSet()
     local set = {}
@@ -654,536 +557,122 @@ local function aiCharacters()
     aiCache = out
     return aiCache
 end
-local function aiAnchor(model)
-    return model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
-end
-local function buildPlayerEntry(plr, char)
-    local entry = {char = char, objects = {}}
-    if ESP.Style == "Highlight" then
-        local h = Instance.new("Highlight")
-        h.Name = "UrbanReloadHL"
-        h.FillTransparency = 0.5
-        h.OutlineColor = Color3.new(1,1,1)
-        h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        h.Parent = char
-        entry.hl = h
-        table.insert(entry.objects, h)
-    end
-    local head = char:FindFirstChild("Head")
-    local bb, txt = makeLabel(head, Vector3.new(0,2.6,0), 170, 20, 12)
-    entry.labelBg, entry.label = bb, txt
-    if bb then table.insert(entry.objects, bb) end
-    if ESP.Boxes then
-        entry.box = makeBoxFrame()
-        if entry.box then table.insert(entry.objects, entry.box) end
-    end
-    if ESP.Tracers then
-        entry.tracer = makeTracerFrame()
-        if entry.tracer then table.insert(entry.objects, entry.tracer) end
-    end
-    ESP.playerEntries[plr] = entry
-    return entry
-end
-local function buildVehicleEntry(model)
-    local anchor = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
-    if not anchor then return nil end
-    local entry = {model = model, anchor = anchor, objects = {}}
-    local color = Color3.fromRGB(255,200,0)
-    if ESP.Style == "Highlight" then
-        local h = Instance.new("Highlight")
-        h.Name = "UrbanReloadHL"
-        h.FillColor = color
-        h.FillTransparency = 0.6
-        h.OutlineColor = color
-        h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        h.Parent = model
-        entry.hl = h
-        table.insert(entry.objects, h)
-    end
-    local bb, txt = makeLabel(anchor, Vector3.new(0,3,0), 140, 20, 12)
-    entry.labelBg, entry.label = bb, txt
-    if bb then table.insert(entry.objects, bb) end
-    ESP.vehicleEntries[model] = entry
-    return entry
-end
-local function buildATMEntry(model)
-    local anchor = atmAnchor(model)
-    if not anchor then return nil end
-    local entry = { model = model, anchor = anchor, objects = {} }
-    local h = Instance.new("Highlight")
-    h.Name = "UrbanReloadHL"
-    h.FillColor = Color3.fromRGB(0,200,90)
-    h.FillTransparency = 0.5
-    h.OutlineColor = Color3.fromRGB(120,255,160)
-    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    h.Parent = model
-    entry.hl = h
-    table.insert(entry.objects, h)
-    local bb, txt = makeLabel(anchor, Vector3.new(0,3,0), 140, 20, 12)
-    entry.labelBg, entry.label = bb, txt
-    if bb then table.insert(entry.objects, bb) end
-    ESP.atmEntries[model] = entry
-    return entry
-end
-local function updateATMEntry(entry)
-    local model, anchor = entry.model, entry.anchor
-    if not model or not model.Parent or not anchor or not anchor.Parent then return false end
-    if entry.label then
-        local parts = { "ATM" }
-        local myHrp = getHrp()
-        if ESP.ShowDistance and myHrp then
-            table.insert(parts, math.floor((anchor.Position-myHrp.Position).Magnitude) .. "m")
-        end
-        entry.label.Text = table.concat(parts, " | ")
-        entry.label.TextColor3 = Color3.fromRGB(120,255,160)
-    end
-    return true
-end
-local function buildMoneyEntry(tool)
-    local handle = lootHandle(tool)
-    if not handle then return nil end
-    local entry = { tool = tool, handle = handle, objects = {} }
-    local h = Instance.new("Highlight")
-    h.Name = "UrbanReloadHL"
-    h.FillColor = Color3.fromRGB(255,200,0)
-    h.FillTransparency = 0.45
-    h.OutlineColor = Color3.fromRGB(255,230,90)
-    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    h.Parent = handle
-    entry.hl = h
-    table.insert(entry.objects, h)
-    local bb, txt = makeLabel(handle, Vector3.new(0,1.8,0), 170, 20, 12)
-    entry.labelBg, entry.label = bb, txt
-    if bb then table.insert(entry.objects, bb) end
-    ESP.moneyEntries[tool] = entry
-    return entry
-end
-local function clearESP()
-    for plr,e in pairs(ESP.playerEntries) do
-        destroyEntry(e)
-        ESP.playerEntries[plr] = nil
-    end
-    for model,e in pairs(ESP.vehicleEntries) do
-        destroyEntry(e)
-        ESP.vehicleEntries[model] = nil
-    end
-    for tool,e in pairs(ESP.moneyEntries) do
-        destroyEntry(e)
-        ESP.moneyEntries[tool] = nil
-    end
-    for model,e in pairs(ESP.atmEntries) do
-        destroyEntry(e)
-        ESP.atmEntries[model] = nil
-    end
-    for model,e in pairs(ESP.aiEntries) do
-        destroyEntry(e)
-        ESP.aiEntries[model] = nil
-    end
-    if ESP.gui then
-        pcall(function() ESP.gui:Destroy() end)
-        ESP.gui = nil
+local invBillboards = {}
+
+local function invDestroy(model)
+    local b = invBillboards[model]
+    if b then
+        pcall(function() b.gui:Destroy() end)
+        invBillboards[model] = nil
     end
 end
-local function refreshESP()
-    clearESP()
-    if not ESP.Enabled then return end
+
+local function invDestroyAll()
+    for model in pairs(invBillboards) do
+        invDestroy(model)
+    end
+end
+
+local function invAnchor(model)
+    return model:FindFirstChild("Head")
+        or model:FindFirstChild("HumanoidRootPart")
+        or model.PrimaryPart
+        or model:FindFirstChildWhichIsA("BasePart", true)
+end
+
+local function invEnsure(model)
+    if invBillboards[model] then
+        return invBillboards[model]
+    end
+    local anchor = invAnchor(model)
+    if not anchor then
+        return nil
+    end
+    local gui = Instance.new("BillboardGui")
+    gui.Name = "RickHubInvESP"
+    gui.Adornee = anchor
+    gui.Size = UDim2.new(0, 230, 0, 72)
+    gui.StudsOffset = Vector3.new(0, 2.8, 0)
+    gui.AlwaysOnTop = true
+    gui.MaxDistance = ESP.MaxDistance
+    local function mkLabel(y, color)
+        local t = Instance.new("TextLabel")
+        t.BackgroundTransparency = 1
+        t.Size = UDim2.new(1, -8, 0, 22)
+        t.Position = UDim2.new(0, 4, 0, y)
+        t.Font = Enum.Font.GothamBold
+        t.TextSize = 15
+        t.TextColor3 = color
+        t.TextStrokeTransparency = 0.35
+        t.TextStrokeColor3 = Color3.new(0, 0, 0)
+        t.Parent = gui
+        return t
+    end
+    local nameLabel = mkLabel(0, Color3.fromHex('#30ff6a'))
+    local weaponLabel = mkLabel(24, Color3.fromRGB(255, 221, 87))
+    local healthLabel = mkLabel(48, Color3.fromRGB(126, 231, 255))
+    gui.Parent = anchor
+    local b = { gui = gui, name = nameLabel, weapon = weaponLabel, health = healthLabel }
+    invBillboards[model] = b
+    return b
+end
+
+local function invUpdateEntry(b, displayName, char)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local tool = char:FindFirstChildOfClass("Tool")
+    b.name.Visible = ESP.ShowName
+    if ESP.ShowName then
+        b.name.Text = displayName
+    end
+    b.weapon.Visible = ESP.ShowWeapon and tool ~= nil
+    if tool then
+        b.weapon.Text = tool.Name
+    end
+    b.health.Visible = ESP.ShowHealth and hum ~= nil
+    if hum and ESP.ShowHealth then
+        local maxHp = math.max(hum.MaxHealth, 1)
+        local pct = math.clamp(hum.Health / maxHp, 0, 1)
+        b.health.Text = string.format("HP %d/%d", math.floor(hum.Health + 0.5), math.floor(maxHp + 0.5))
+        b.health.TextColor3 = Color3.fromRGB(255, 64, 64):Lerp(Color3.fromRGB(64, 255, 128), pct)
+    end
+end
+
+local function invUpdate()
+    if not ESP.Enabled then
+        invDestroyAll()
+        return
+    end
+    local seen = {}
     if ESP.Players then
-        for _,plr in ipairs(Players:GetPlayers()) do
-            local char = plr.Character
-            if plr ~= LP and char and char.Parent and char:FindFirstChild("HumanoidRootPart") then
-                buildPlayerEntry(plr, char)
-            end
-        end
-    end
-    if ESP.Vehicles then
-        for _,model in ipairs(CollectionService:GetTagged("Vehicle")) do
-            pcall(function() buildVehicleEntry(model) end)
-        end
-    end
-    if ESP.AI then
-        for _,model in ipairs(aiCharacters()) do
-            if model.Parent then
-                pcall(buildAIEntry, model)
-            end
-        end
-    end
-    if ESP.Money then
-        for _,tool in ipairs(CollectionService:GetTagged(LOOT_TAG)) do
-            if tool.Parent and isMoneyLoot(tool) then
-                pcall(function() buildMoneyEntry(tool) end)
-            end
-        end
-        for _,model in ipairs(scanATMs()) do
-            if model.Parent then
-                pcall(function() buildATMEntry(model) end)
-            end
-        end
-    end
-end
-local function reconcileESP()
-    if not ESP.Enabled then return end
-    if ESP.Players then
-        for _,plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LP then
-                local char = plr.Character
-                local entry = ESP.playerEntries[plr]
-                local ready = char and char.Parent and char:FindFirstChild("HumanoidRootPart")
-                if ready then
-                    if entry and entry.char ~= char then
-                        destroyEntry(entry)
-                        ESP.playerEntries[plr] = nil
-                        entry = nil
-                    end
-                    if not entry then buildPlayerEntry(plr, char) end
-                elseif entry then
-                    destroyEntry(entry)
-                    ESP.playerEntries[plr] = nil
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LP and plr.Character and plr.Character.Parent then
+                seen[plr.Character] = true
+                local b = invEnsure(plr.Character)
+                if b then
+                    b.gui.MaxDistance = ESP.MaxDistance
+                    invUpdateEntry(b, plr.Name, plr.Character)
                 end
             end
         end
     end
-    for plr,entry in pairs(ESP.playerEntries) do
-        if plr == LP or not plr.Parent or (ESP.Players and entry.char ~= plr.Character) then
-            destroyEntry(entry)
-            ESP.playerEntries[plr] = nil
-        end
-    end
-    if ESP.Vehicles then
-        for _,model in ipairs(CollectionService:GetTagged("Vehicle")) do
-            if not ESP.vehicleEntries[model] and model.Parent then
-                pcall(function() buildVehicleEntry(model) end)
+    if ESP.AI then
+        for _, model in ipairs(aiCharacters()) do
+            if model and model.Parent then
+                seen[model] = true
+                local b = invEnsure(model)
+                if b then
+                    b.gui.MaxDistance = ESP.MaxDistance
+                    invUpdateEntry(b, model.Name, model)
+                end
             end
         end
     end
-    for model,entry in pairs(ESP.vehicleEntries) do
-        if not model.Parent or not ESP.Vehicles then
-            destroyEntry(entry)
-            ESP.vehicleEntries[model] = nil
-        end
-    end
-    if ESP.Money then
-        for _,tool in ipairs(CollectionService:GetTagged(LOOT_TAG)) do
-            if tool.Parent and isMoneyLoot(tool) and not ESP.moneyEntries[tool] then
-                pcall(function() buildMoneyEntry(tool) end)
-            end
-        end
-        for _,model in ipairs(scanATMs()) do
-            if model.Parent and not ESP.atmEntries[model] then
-                pcall(function() buildATMEntry(model) end)
-            end
-        end
-    end
-    for tool,entry in pairs(ESP.moneyEntries) do
-        if not tool.Parent or not ESP.Money then
-            destroyEntry(entry)
-            ESP.moneyEntries[tool] = nil
-        end
-    end
-    for model,entry in pairs(ESP.atmEntries) do
-        if not model.Parent or not ESP.Money then
-            destroyEntry(entry)
-            ESP.atmEntries[model] = nil
+    for model in pairs(invBillboards) do
+        if not seen[model] then
+            invDestroy(model)
         end
     end
 end
-local function projectBox(cam, cf, size)
-    local minX, minY, maxX, maxY
-    for i = 0, 7 do
-        local sx = (i % 2 == 0) and -0.5 or 0.5
-        local sy = (math.floor(i / 2) % 2 == 0) and -0.5 or 0.5
-        local sz = (math.floor(i / 4) % 2 == 0) and -0.5 or 0.5
-        local corner = cf * Vector3.new(sx * size.X, sy * size.Y, sz * size.Z)
-        local screen = cam:WorldToViewportPoint(corner)
-        if screen.Z > 0 then
-            local x, y = screen.X, screen.Y
-            if not minX or x < minX then minX = x end
-            if not maxX or x > maxX then maxX = x end
-            if not minY or y < minY then minY = y end
-            if not maxY or y > maxY then maxY = y end
-        end
-    end
-    if not minX then return nil end
-    return minX, minY, maxX - minX, maxY - minY
-end
-local function characterBox(char)
-    local minV = Vector3.new(math.huge, math.huge, math.huge)
-    local maxV = Vector3.new(-math.huge, -math.huge, -math.huge)
-    local found = false
-    for _, part in ipairs(char:GetChildren()) do
-        if part:IsA("BasePart") then
-            local p, half = part.Position, part.Size * 0.5
-            minV = Vector3.new(math.min(minV.X, p.X - half.X), math.min(minV.Y, p.Y - half.Y), math.min(minV.Z, p.Z - half.Z))
-            maxV = Vector3.new(math.max(maxV.X, p.X + half.X), math.max(maxV.Y, p.Y + half.Y), math.max(maxV.Z, p.Z + half.Z))
-            found = true
-        end
-    end
-    if not found then return nil end
-    return minV, maxV
-end
-local function updatePlayerEntry(entry, plr)
-    local char = entry.char
-    if not char or not char.Parent then return false end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    local head = char:FindFirstChild("Head")
-    if not hrp or not head then return false end
-    local color = espColor(plr)
-    if entry.hl then
-        entry.hl.FillColor = color
-        entry.hl.OutlineColor = Color3.new(1,1,1)
-    end
-    local cam = Workspace.CurrentCamera
-    local myHrp = getHrp()
-    local boxX, boxY, boxW, boxH
-    if cam then
-        if not entry.boxSize or (os.clock() - (entry.boxAt or 0)) > 0.25 then
-            local minV, maxV = characterBox(char)
-            if minV then
-                entry.boxSize = maxV - minV
-                entry.boxOffset = (minV + maxV) * 0.5 - hrp.Position
-            end
-            entry.boxAt = os.clock()
-        end
-        local center = hrp.Position + (entry.boxOffset or Vector3.zero)
-        local size = entry.boxSize or Vector3.new(2.2, 5.2, 1.2)
-        boxX, boxY, boxW, boxH = projectBox(cam, CFrame.new(center) * hrp.CFrame.Rotation, size)
-    end
-    if entry.label then
-        local parts = {}
-        if ESP.ShowName then table.insert(parts, plr.Name) end
-        if ESP.ShowHealth and hum then table.insert(parts, math.floor(hum.Health) .. " hp") end
-        if ESP.ShowDistance and myHrp then
-            table.insert(parts, math.floor((hrp.Position-myHrp.Position).Magnitude) .. "m")
-        end
-        entry.label.Text = table.concat(parts, " | ")
-        entry.label.TextColor3 = color
-    end
-    if entry.box then
-        if boxX then
-            entry.box.Visible = true
-            entry.box.Position = UDim2.fromOffset(boxX, boxY)
-            entry.box.Size = UDim2.fromOffset(math.max(boxW, 4), math.max(boxH, 4))
-            local stroke = entry.box:FindFirstChild("Outline")
-            if stroke then stroke.Color = color end
-        else
-            entry.box.Visible = false
-        end
-    end
-    if entry.tracer then
-        if boxX and cam then
-            local vp = cam.ViewportSize
-            local startX, startY = vp.X * 0.5, vp.Y
-            local endX, endY = boxX + boxW * 0.5, boxY + boxH
-            local dx, dy = endX - startX, endY - startY
-            local length = math.sqrt(dx*dx + dy*dy)
-            if length > 2 then
-                entry.tracer.Visible = true
-                entry.tracer.Position = UDim2.fromOffset((startX + endX) * 0.5, (startY + endY) * 0.5)
-                entry.tracer.Size = UDim2.fromOffset(length, 1.5)
-                entry.tracer.Rotation = math.deg(math.atan2(dy, dx))
-                entry.tracer.BackgroundColor3 = color
-            else
-                entry.tracer.Visible = false
-            end
-        else
-            entry.tracer.Visible = false
-        end
-    end
-    return true
-end
-function buildAIEntry(model)
-    local anchor = aiAnchor(model)
-    if not anchor then return nil end
-    local entry = { model = model, anchor = anchor, objects = {} }
-    local color = Color3.fromRGB(255,150,0)
-    if ESP.Style == "Highlight" then
-        local h = Instance.new("Highlight")
-        h.Name = "UrbanReloadHL"
-        h.FillColor = color
-        h.FillTransparency = 0.55
-        h.OutlineColor = color
-        h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        h.Parent = model
-        entry.hl = h
-        table.insert(entry.objects, h)
-    end
-    local bb, txt = makeLabel(anchor, Vector3.new(0,2.6,0), 170, 20, 12)
-    entry.labelBg, entry.label = bb, txt
-    if bb then table.insert(entry.objects, bb) end
-    if ESP.Boxes then
-        entry.box = makeBoxFrame()
-        if entry.box then table.insert(entry.objects, entry.box) end
-    end
-    if ESP.Tracers then
-        entry.tracer = makeTracerFrame()
-        if entry.tracer then table.insert(entry.objects, entry.tracer) end
-    end
-    ESP.aiEntries[model] = entry
-    return entry
-end
-function updateAIEntry(entry)
-    local model = entry.model
-    if not model or not model.Parent then return false end
-    local anchor = entry.anchor
-    if not anchor or not anchor.Parent then
-        anchor = aiAnchor(model)
-        entry.anchor = anchor
-        if not anchor then return false end
-        if entry.labelBg then entry.labelBg.Parent = anchor end
-    end
-    local hum = model:FindFirstChildOfClass("Humanoid")
-    local color = Color3.fromRGB(255,150,0)
-    if entry.hl then
-        entry.hl.FillColor = color
-        entry.hl.OutlineColor = color
-    end
-    local cam = Workspace.CurrentCamera
-    local myHrp = getHrp()
-    local boxX, boxY, boxW, boxH
-    if cam and entry.box then
-        if not entry.boxSize or (os.clock() - (entry.boxAt or 0)) > 0.25 then
-            local minV, maxV = characterBox(model)
-            if minV then
-                entry.boxSize = maxV - minV
-                entry.boxOffset = (minV + maxV) * 0.5 - anchor.Position
-            end
-            entry.boxAt = os.clock()
-        end
-        local center = anchor.Position + (entry.boxOffset or Vector3.zero)
-        local size = entry.boxSize or Vector3.new(2.2, 5.2, 1.2)
-        boxX, boxY, boxW, boxH = projectBox(cam, CFrame.new(center) * anchor.CFrame.Rotation, size)
-    end
-    if entry.label then
-        local parts = {}
-        if ESP.ShowName then table.insert(parts, model.Name) end
-        if ESP.ShowHealth and hum then table.insert(parts, math.floor(hum.Health) .. " hp") end
-        if ESP.ShowDistance and myHrp then
-            table.insert(parts, math.floor((anchor.Position-myHrp.Position).Magnitude) .. "m")
-        end
-        entry.label.Text = table.concat(parts, " | ")
-        entry.label.TextColor3 = color
-    end
-    if entry.box then
-        if boxX then
-            entry.box.Visible = true
-            entry.box.Position = UDim2.fromOffset(boxX, boxY)
-            entry.box.Size = UDim2.fromOffset(math.max(boxW,4), math.max(boxH,4))
-            local stroke = entry.box:FindFirstChild("Outline")
-            if stroke then stroke.Color = color end
-        else
-            entry.box.Visible = false
-        end
-    end
-    if entry.tracer then
-        if boxX and cam then
-            local vp = cam.ViewportSize
-            local startX, startY = vp.X * 0.5, vp.Y
-            local endX, endY = boxX + boxW * 0.5, boxY + boxH
-            local dx, dy = endX - startX, endY - startY
-            local length = math.sqrt(dx*dx + dy*dy)
-            if length > 2 then
-                entry.tracer.Visible = true
-                entry.tracer.Position = UDim2.fromOffset((startX+endX)*0.5, (startY+endY)*0.5)
-                entry.tracer.Size = UDim2.fromOffset(length, 1.5)
-                entry.tracer.Rotation = math.deg(math.atan2(dy, dx))
-                entry.tracer.BackgroundColor3 = color
-            else
-                entry.tracer.Visible = false
-            end
-        else
-            entry.tracer.Visible = false
-        end
-    end
-    return true
-end
-local function reconcileAI()
-    if not ESP.AI then
-        for model, entry in pairs(ESP.aiEntries) do
-            destroyEntry(entry)
-            ESP.aiEntries[model] = nil
-        end
-        return
-    end
-    local live = {}
-    for _, model in ipairs(aiCharacters()) do
-        live[model] = true
-        if not ESP.aiEntries[model] then
-            pcall(buildAIEntry, model)
-        end
-    end
-    for model, entry in pairs(ESP.aiEntries) do
-        if not live[model] or not model.Parent then
-            destroyEntry(entry)
-            ESP.aiEntries[model] = nil
-        end
-    end
-end
-local function updateVehicleEntry(entry)
-    local model = entry.model
-    if not model or not model.Parent then return false end
-    if entry.label then
-        local parts = {model.Name}
-        local myHrp = getHrp()
-        if ESP.ShowDistance and myHrp and entry.anchor and entry.anchor.Parent then
-            table.insert(parts, math.floor((entry.anchor.Position-myHrp.Position).Magnitude) .. "m")
-        end
-        entry.label.Text = table.concat(parts, " ")
-        entry.label.TextColor3 = Color3.fromRGB(255,200,0)
-    end
-    return true
-end
-local function updateMoneyEntry(entry)
-    local tool = entry.tool
-    local handle = entry.handle
-    if not tool or not tool.Parent or not handle or not handle.Parent then return false end
-    if entry.label then
-        local value = lootValue(tool)
-        local parts = { value and ("$" .. tostring(value)) or tostring(lootItem(tool)) }
-        local myHrp = getHrp()
-        if ESP.ShowDistance and myHrp then
-            table.insert(parts, math.floor((handle.Position-myHrp.Position).Magnitude) .. "m")
-        end
-        entry.label.Text = table.concat(parts, " | ")
-        entry.label.TextColor3 = Color3.fromRGB(255,210,60)
-    end
-    return true
-end
-local espErrorShown = false
-local function reportEspError(err)
-    if espErrorShown then return end
-    espErrorShown = true
-    print("[UrbanReload] ESP update error: " .. tostring(err))
-end
-RunService.RenderStepped:Connect(function()
-    if not ESP.Enabled then return end
-    for plr,entry in pairs(ESP.playerEntries) do
-        local ok, err = pcall(updatePlayerEntry, entry, plr)
-        if not ok then reportEspError(err) end
-    end
-    for _,entry in pairs(ESP.vehicleEntries) do
-        local ok, err = pcall(updateVehicleEntry, entry)
-        if not ok then reportEspError(err) end
-    end
-    for _,entry in pairs(ESP.moneyEntries) do
-        local ok, err = pcall(updateMoneyEntry, entry)
-        if not ok then reportEspError(err) end
-    end
-    for _,entry in pairs(ESP.atmEntries) do
-        local ok, err = pcall(updateATMEntry, entry)
-        if not ok then reportEspError(err) end
-    end
-    for _,entry in pairs(ESP.aiEntries) do
-        local ok, err = pcall(updateAIEntry, entry)
-        if not ok then reportEspError(err) end
-    end
-end)
-task.spawn(function()
-    while true do
-        if ESP.Enabled then pcall(reconcileESP) end
-        if ESP.Enabled then pcall(reconcileAI) end
-        task.wait(1)
-    end
-end)
 local silentFov, silentCircleEnabled = 90, true
 local fovCircleGui, fovCircleFrame
 local function destroyFovCircle()
@@ -1287,7 +776,7 @@ RunService.RenderStepped:Connect(function(dt)
 end)
 local CombatTab = Window:Tab({ Title = "Combat", Icon = "zap" })
 local RageTab = Window:Tab({ Title = "Silent Aim", Icon = "crosshair" })
-local EspTab = Window:Tab({ Title = "ESP", Icon = "eye" })
+local EspTab = Window:Tab({ Title = "ESP Inventario", Icon = "eye" })
 local TpTab = Window:Tab({ Title = "Teleport", Icon = "map-pin" })
 local MoveTab = Window:Tab({ Title = "Movement", Icon = "move" })
 local silentAim = false
@@ -1522,6 +1011,32 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
+local autoShoot = false
+local autoShootDelay = 250
+local lastAutoShot = 0
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+RunService.RenderStepped:Connect(function()
+    if not autoShoot then return end
+    local now = os.clock()
+    if now - lastAutoShot < (autoShootDelay / 1000) then return end
+    local cam = Workspace.CurrentCamera
+    if not cam then return end
+    local pos = silentAimTarget()
+    if not pos then return end
+    local sp, onScreen = cam:WorldToViewportPoint(pos)
+    if not onScreen or sp.Z <= 0 then return end
+    lastAutoShot = now
+    pcall(function()
+        VirtualInputManager:SendMouseButtonEvent(sp.X, sp.Y, 0, true, game, 0)
+        task.delay(0.05, function()
+            pcall(function()
+                VirtualInputManager:SendMouseButtonEvent(sp.X, sp.Y, 0, false, game, 0)
+            end)
+        end)
+    end)
+end)
+
 CombatTab:Section({ Title = "Weapon" })
 CombatTab:Toggle({ Title = "Instant Reload", Value = false, Callback = function(v)
     instantReload = v
@@ -1658,49 +1173,36 @@ RageTab:Toggle({ Title = "Aim on RMB", Value = false, Callback = function(v) sil
 RageTab:Dropdown({ Title = "Hit Part", Values = { "Head", "HumanoidRootPart", "UpperTorso", "LowerTorso" }, Value = 1, Callback = function(v)
     silentPart = (type(v) == "table" and v[1]) or v
 end })
-EspTab:Section({ Title = "ESP Settings" })
+RageTab:Toggle({ Title = "Auto Shoot", Value = false, Callback = function(v)
+    autoShoot = v
+end })
+RageTab:Slider({ Title = "Auto Shoot Delay (ms)", Step = 50, Value = { Min = 50, Max = 1000, Default = 250 }, Callback = function(v)
+    autoShootDelay = v
+end })
+EspTab:Section({ Title = "ESP Inventario" })
 EspTab:Toggle({ Title = "ESP Enabled", Value = false, Callback = function(v)
     ESP.Enabled = v
-    refreshESP()
+    if v then
+        startLoop("InvESP", 0.15, invUpdate)
+    else
+        stopLoop("InvESP")
+        invDestroyAll()
+    end
 end })
-EspTab:Toggle({ Title = "Players", Value = true, Callback = function(v)
-    ESP.Players = v
-    if ESP.Enabled then refreshESP() end
-end })
-EspTab:Toggle({ Title = "Vehicles", Value = false, Callback = function(v)
-    ESP.Vehicles = v
-    if ESP.Enabled then refreshESP() end
-end })
-EspTab:Toggle({ Title = "AIs", Value = false, Callback = function(v)
-    ESP.AI = v
-    if ESP.Enabled then refreshESP() end
-end })
-EspTab:Dropdown({ Title = "Style", Values = { "Highlight", "None" }, Value = 1, Callback = function(v)
-    ESP.Style = (type(v) == "table" and v[1]) or v
-    if ESP.Enabled then refreshESP() end
+EspTab:Toggle({ Title = "Names", Value = true, Callback = function(v) ESP.ShowName = v end })
+EspTab:Toggle({ Title = "Weapon", Value = true, Callback = function(v) ESP.ShowWeapon = v end })
+EspTab:Toggle({ Title = "Health", Value = true, Callback = function(v) ESP.ShowHealth = v end })
+EspTab:Toggle({ Title = "Players", Value = true, Callback = function(v) ESP.Players = v end })
+EspTab:Toggle({ Title = "AIs", Value = false, Callback = function(v) ESP.AI = v end })
+EspTab:Slider({ Title = "Max Distance (m)", Step = 50, Value = { Min = 50, Max = 2000, Default = 500 }, Callback = function(v)
+    ESP.MaxDistance = v
 end })
 EspTab:Section({ Title = "Look" })
 EspTab:Toggle({ Title = "Fullbright", Value = false, Callback = function(v)
     fullbright = v
     applyFullbright(v)
 end })
-EspTab:Toggle({ Title = "Team Colors", Value = true, Callback = function(v) ESP.TeamColors = v end })
-EspTab:Toggle({ Title = "Names", Value = true, Callback = function(v) ESP.ShowName = v end })
-EspTab:Toggle({ Title = "Health", Value = true, Callback = function(v) ESP.ShowHealth = v end })
-EspTab:Toggle({ Title = "Distance", Value = true, Callback = function(v) ESP.ShowDistance = v end })
-EspTab:Toggle({ Title = "Boxes", Value = false, Callback = function(v)
-    ESP.Boxes = v
-    if ESP.Enabled then refreshESP() end
-end })
-EspTab:Toggle({ Title = "Tracers", Value = false, Callback = function(v)
-    ESP.Tracers = v
-    if ESP.Enabled then refreshESP() end
-end })
 EspTab:Section({ Title = "Loot" })
-EspTab:Toggle({ Title = "ATM ESP", Value = false, Callback = function(v)
-    ESP.Money = v
-    if ESP.Enabled then refreshESP() end
-end })
 EspTab:Toggle({ Title = "Auto Loot", Value = false, Callback = function(v)
     autoLoot = v
     if v then startLoop("AutoLoot", 0.35, doAutoLoot) else stopLoop("AutoLoot") end
@@ -1783,7 +1285,6 @@ UserInputService.JumpRequest:Connect(function()
 end)
 LP.CharacterAdded:Connect(function(char)
     spinbotHum = nil
-    if ESP.Enabled then refreshESP() end
     local hum = char:WaitForChild("Humanoid", 10)
     if not hum then return end
     pcall(function() hum.AutoRotate = true end)
@@ -1792,10 +1293,8 @@ LP.CharacterRemoving:Connect(function()
     spinbotHum = nil
 end)
 Players.PlayerRemoving:Connect(function(plr)
-    local entry = ESP.playerEntries[plr]
-    if entry then
-        destroyEntry(entry)
-        ESP.playerEntries[plr] = nil
+    if plr.Character then
+        pcall(invDestroy, plr.Character)
     end
 end)
 local function shutdown()
@@ -1804,15 +1303,8 @@ local function shutdown()
     bhop = false
     for key in pairs(loopTokens) do loopTokens[key] = nil end
     ESP.Enabled = false
-    ESP.AI = false
-    pcall(function()
-        for _, list in ipairs({ ESP.playerEntries, ESP.vehicleEntries, ESP.aiEntries, ESP.moneyEntries, ESP.atmEntries }) do
-            for key, entry in pairs(list) do
-                pcall(destroyEntry, entry)
-                list[key] = nil
-            end
-        end
-    end)
+    pcall(function() stopLoop("InvESP") end)
+    pcall(invDestroyAll)
     pcall(destroyFovCircle)
     pcall(destroyTargetLine)
     instantReload = false
@@ -1826,7 +1318,7 @@ local function shutdown()
     pcall(function()
         local pg = LP:FindFirstChildOfClass("PlayerGui")
         if not pg then return end
-        for _, name in ipairs({ "RickHubESP", "RickHubFOV", "RickHubTargetLine" }) do
+        for _, name in ipairs({ "RickHubFOV", "RickHubTargetLine" }) do
             local gui = pg:FindFirstChild(name)
             if gui then gui:Destroy() end
         end
@@ -1834,5 +1326,5 @@ local function shutdown()
     pcall(function() Window:Destroy() end)
 end
 getgenv().__UrbanReloadShutdown = shutdown
-print("[RickHub] v2.1.4 loaded - tabs: Combat, Silent Aim, ESP, Teleport, Movement")
-notify("Rick Hub free v2.1.4", "Urban Reload listo: Silent Aim activo.")
+print("[RickHub] v2.1.4 loaded - tabs: Combat, Silent Aim, ESP Inventario, Teleport, Movement")
+notify("Rick Hub free v2.1.4", "Urban Reload listo: Silent Aim + Auto Shoot activos.")
