@@ -45,10 +45,13 @@ local function patchWeaponConfig()
     end)
 end
 patchWeaponConfig()
-local spinbot = false
-local spinbotHum = nil
-local spinSpeed = 10
-local spinAngle = 0
+local antiaim = false
+local antiaimTrack = nil
+local ghostEnabled = false
+local ghostOrigin = nil
+local ghostVisual = nil
+local tpMode = false
+local tpMaxDistance = 6
 local fullbright = false
 local instantReload = false
 local rapidFire = false
@@ -562,6 +565,7 @@ local invBillboards = {}
 local function invDestroy(model)
     local b = invBillboards[model]
     if b then
+        if b.diedConn then pcall(function() b.diedConn:Disconnect() end) end
         pcall(function() b.gui:Destroy() end)
         invBillboards[model] = nil
     end
@@ -614,6 +618,12 @@ local function invEnsure(model)
     gui.Parent = anchor
     local b = { gui = gui, name = nameLabel, weapon = weaponLabel, health = healthLabel }
     invBillboards[model] = b
+    local hum = model:FindFirstChildOfClass("Humanoid")
+    if hum then
+        b.diedConn = hum.Died:Connect(function()
+            pcall(invDestroy, model)
+        end)
+    end
     return b
 end
 
@@ -750,29 +760,51 @@ local function ensureTargetLine()
     targetLineFrame = frame
     return frame
 end
-RunService.RenderStepped:Connect(function(dt)
-    if not spinbot then
-        if spinbotHum then
-            pcall(function() spinbotHum.AutoRotate = true end)
-            spinbotHum = nil
-        end
-        return
+local ANTIAIM_ANIM_ID = "rbxassetid://10147821284"
+local function stopAntiAim()
+    if antiaimTrack then
+        pcall(function() antiaimTrack:Stop() end)
+        pcall(function() antiaimTrack:Destroy() end)
+        antiaimTrack = nil
     end
+end
+local function startAntiAim()
     local char = LP.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hrp and hum then
-        if spinbotHum ~= hum then
-            if spinbotHum then pcall(function() spinbotHum.AutoRotate = true end) end
-            spinbotHum = hum
-            hum.AutoRotate = false
-        end
-        spinAngle = (spinAngle + spinSpeed * 60 * dt) % 360
-        local pos = hrp.Position
-        local vel = hrp.AssemblyLinearVelocity
-        hrp.CFrame = CFrame.new(pos) * CFrame.Angles(0, math.rad(spinAngle), 0)
-        hrp.AssemblyLinearVelocity = vel
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local animator = char:FindFirstChildOfClass("Animator") or hum
+    if not animator then return end
+    stopAntiAim()
+    local ok, track = pcall(function()
+        local a = Instance.new("Animation")
+        a.AnimationId = ANTIAIM_ANIM_ID
+        local t = animator:LoadAnimation(a)
+        t.Looped = true
+        t:Play()
+        pcall(function() t:AdjustSpeed(9999) end)
+        return t
+    end)
+    if ok and track then
+        antiaimTrack = track
     end
+end
+RunService.Heartbeat:Connect(function()
+    if antiaim and antiaimTrack then
+        pcall(function() antiaimTrack:AdjustSpeed(9999) end)
+    end
+end)
+RunService.Stepped:Connect(function()
+    if not ghostEnabled then return end
+    local hrp = getHrp()
+    if not hrp or not ghostOrigin then return end
+    ghostVisual = hrp.CFrame
+    hrp.CFrame = ghostOrigin
+end)
+RunService.Heartbeat:Connect(function()
+    if not ghostEnabled then return end
+    local hrp = getHrp()
+    if not hrp or not ghostVisual then return end
+    hrp.CFrame = ghostVisual
 end)
 local CombatTab = Window:Tab({ Title = "Combat", Icon = "zap" })
 local RageTab = Window:Tab({ Title = "Silent Aim", Icon = "crosshair" })
@@ -919,6 +951,74 @@ local function silentAimTarget()
     end
     return nil
 end
+local tracersGui
+local activeTracers = {}
+local TRACER_DURATION = 6
+local function ensureTracersGui()
+    if tracersGui and tracersGui.Parent then return tracersGui end
+    local pg = LP:FindFirstChildOfClass("PlayerGui")
+    if not pg then return nil end
+    local g = Instance.new("ScreenGui")
+    g.Name = "RickHubTracers"
+    g.ResetOnSpawn = false
+    g.IgnoreGuiInset = true
+    g.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    g.DisplayOrder = 12
+    g.Parent = pg
+    tracersGui = g
+    return g
+end
+local function destroyTracers()
+    for _, t in ipairs(activeTracers) do
+        pcall(function() t.frame:Destroy() end)
+    end
+    activeTracers = {}
+    if tracersGui then
+        pcall(function() tracersGui:Destroy() end)
+        tracersGui = nil
+    end
+end
+local function spawnTracer(origin, target)
+    local cam = Workspace.CurrentCamera
+    if not cam then return end
+    local gui = ensureTracersGui()
+    if not gui then return end
+    local line = Instance.new("Frame")
+    line.BackgroundColor3 = Color3.fromRGB(255, 40, 40)
+    line.BorderSizePixel = 0
+    line.AnchorPoint = Vector2.new(0.5, 0.5)
+    line.ZIndex = 7
+    line.Parent = gui
+    table.insert(activeTracers, { frame = line, born = os.clock(), origin = origin, target = target })
+end
+RunService.RenderStepped:Connect(function()
+    if #activeTracers == 0 then return end
+    local cam = Workspace.CurrentCamera
+    if not cam then return end
+    local now = os.clock()
+    for i = #activeTracers, 1, -1 do
+        local t = activeTracers[i]
+        local age = now - t.born
+        if age >= TRACER_DURATION then
+            pcall(function() t.frame:Destroy() end)
+            table.remove(activeTracers, i)
+        else
+            local sp0, on0 = cam:WorldToViewportPoint(t.origin)
+            local sp1, on1 = cam:WorldToViewportPoint(t.target)
+            if on0 and on1 and sp0.Z > 0 and sp1.Z > 0 then
+                local dx, dy = sp1.X - sp0.X, sp1.Y - sp0.Y
+                local len = math.sqrt(dx * dx + dy * dy)
+                t.frame.Visible = true
+                t.frame.Size = UDim2.fromOffset(len, 2)
+                t.frame.Position = UDim2.fromOffset((sp0.X + sp1.X) / 2, (sp0.Y + sp1.Y) / 2)
+                t.frame.Rotation = math.deg(math.atan2(dy, dx))
+                t.frame.BackgroundTransparency = age / TRACER_DURATION
+            else
+                t.frame.Visible = false
+            end
+        end
+    end
+end)
 local function installSilentAim()
     if silentHookInstalled then return end
     if type(hookmetamethod) ~= "function" or type(getnamecallmethod) ~= "function" then
@@ -952,6 +1052,7 @@ local function installSilentAim()
                         args[11] = origin
                         args[12] = d
                         args[13] = pos
+                        spawnTracer(origin, pos)
                         return old(self, table.unpack(args, 1, 13))
                     end
                 end
@@ -1014,8 +1115,9 @@ end)
 local autoShoot = false
 local autoShootDelay = 250
 local lastAutoShot = 0
+local autoShootFireX = 0.865
+local autoShootFireY = 0.657
 local VirtualInputManager = game:GetService("VirtualInputManager")
-
 RunService.RenderStepped:Connect(function()
     if not autoShoot then return end
     local now = os.clock()
@@ -1027,11 +1129,14 @@ RunService.RenderStepped:Connect(function()
     local sp, onScreen = cam:WorldToViewportPoint(pos)
     if not onScreen or sp.Z <= 0 then return end
     lastAutoShot = now
+    local vp = cam.ViewportSize
+    local fx = vp.X * autoShootFireX
+    local fy = vp.Y * autoShootFireY
     pcall(function()
-        VirtualInputManager:SendMouseButtonEvent(sp.X, sp.Y, 0, true, game, 0)
+        VirtualInputManager:SendMouseButtonEvent(fx, fy, 0, true, game, 0)
         task.delay(0.05, function()
             pcall(function()
-                VirtualInputManager:SendMouseButtonEvent(sp.X, sp.Y, 0, false, game, 0)
+                VirtualInputManager:SendMouseButtonEvent(fx, fy, 0, false, game, 0)
             end)
         end)
     end)
@@ -1157,9 +1262,11 @@ CombatTab:Toggle({ Title = "No Spread", Value = false, Callback = function(v)
         stopLoop("NoSpread")
     end
 end })
-CombatTab:Section({ Title = "Antihit" })
-CombatTab:Toggle({ Title = "Spinbot", Value = false, Callback = function(v) spinbot = v end })
-CombatTab:Slider({ Title = "Spin Speed", Step = 1, Value = { Min = 1, Max = 50, Default = 10 }, Callback = function(v) spinSpeed = v end })
+CombatTab:Section({ Title = "Anti-Aim" })
+CombatTab:Toggle({ Title = "Anti Aim", Value = false, Callback = function(v)
+    antiaim = v
+    if v then startAntiAim() else stopAntiAim() end
+end })
 RageTab:Section({ Title = "Silent Aim" })
 RageTab:Toggle({ Title = "Silent Aim", Value = false, Callback = function(v)
     silentAim = v
@@ -1178,6 +1285,12 @@ RageTab:Toggle({ Title = "Auto Shoot", Value = false, Callback = function(v)
 end })
 RageTab:Slider({ Title = "Auto Shoot Delay (ms)", Step = 50, Value = { Min = 50, Max = 1000, Default = 250 }, Callback = function(v)
     autoShootDelay = v
+end })
+RageTab:Slider({ Title = "Fire Button X (%)", Step = 1, Value = { Min = 0, Max = 100, Default = 87 }, Callback = function(v)
+    autoShootFireX = v / 100
+end })
+RageTab:Slider({ Title = "Fire Button Y (%)", Step = 1, Value = { Min = 0, Max = 100, Default = 66 }, Callback = function(v)
+    autoShootFireY = v / 100
 end })
 EspTab:Section({ Title = "ESP Inventario" })
 EspTab:Toggle({ Title = "ESP Enabled", Value = false, Callback = function(v)
@@ -1218,6 +1331,7 @@ EspTab:Slider({ Title = "Collect Radius (m)", Step = 1, Value = { Min = 5, Max =
     collectRadius = v
 end })
 TpTab:Section({ Title = "Teleport" })
+TpTab:Toggle({ Title = "TP Mode (max 6 studs)", Value = false, Callback = function(v) tpMode = v end })
 TpTab:Button({ Title = "Teleport to Nearest Player", Callback = function()
     local best, bestDist = nil, math.huge
     local myHrp = getHrp()
@@ -1231,7 +1345,16 @@ TpTab:Button({ Title = "Teleport to Nearest Player", Callback = function()
             end
         end
     end
-    if best then myHrp.CFrame = CFrame.new(best.Position + Vector3.new(0, 3, 0)) end
+    if best then
+        local dest = best.Position + Vector3.new(0, 3, 0)
+        if tpMode then
+            local to = dest - myHrp.Position
+            if to.Magnitude > tpMaxDistance then
+                dest = myHrp.Position + to.Unit * tpMaxDistance
+            end
+        end
+        myHrp.CFrame = CFrame.new(dest)
+    end
 end })
 TpTab:Button({ Title = "Teleport to Random Player", Callback = function()
     local list = {}
@@ -1242,7 +1365,25 @@ TpTab:Button({ Title = "Teleport to Random Player", Callback = function()
     local plr = list[math.random(1, #list)]
     local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
     local myHrp = getHrp()
-    if hrp and myHrp then myHrp.CFrame = CFrame.new(hrp.Position + Vector3.new(0, 3, 0)) end
+    if hrp and myHrp then
+        local dest = hrp.Position + Vector3.new(0, 3, 0)
+        if tpMode then
+            local to = dest - myHrp.Position
+            if to.Magnitude > tpMaxDistance then
+                dest = myHrp.Position + to.Unit * tpMaxDistance
+            end
+        end
+        myHrp.CFrame = CFrame.new(dest)
+    end
+end })
+TpTab:Button({ Title = "Dash Forward (6 studs)", Callback = function()
+    local myHrp = getHrp()
+    local cam = Workspace.CurrentCamera
+    if not myHrp or not cam then return end
+    local fwd = cam.CFrame.LookVector
+    fwd = Vector3.new(fwd.X, 0, fwd.Z)
+    if fwd.Magnitude > 0.01 then fwd = fwd.Unit end
+    myHrp.CFrame = CFrame.new(myHrp.Position + fwd * tpMaxDistance)
 end })
 MoveTab:Section({ Title = "Movement" })
 MoveTab:Toggle({ Title = "Speed", Value = false, Callback = function(v)
@@ -1278,19 +1419,37 @@ MoveTab:Toggle({ Title = "Bunny Hop", Value = false, Callback = function(v)
         stopLoop("Bhop")
     end
 end })
+MoveTab:Toggle({ Title = "Ghost Mode", Value = false, Callback = function(v)
+    ghostEnabled = v
+    if v then
+        local hrp = getHrp()
+        if hrp then
+            ghostOrigin = hrp.CFrame
+            ghostVisual = hrp.CFrame
+        end
+    else
+        ghostOrigin = nil
+        ghostVisual = nil
+    end
+end })
+
 UserInputService.JumpRequest:Connect(function()
     if not bhop then return end
     local h = liveHum()
     if h then h.Jump = true end
 end)
 LP.CharacterAdded:Connect(function(char)
-    spinbotHum = nil
+    ghostOrigin = nil
+    ghostVisual = nil
     local hum = char:WaitForChild("Humanoid", 10)
     if not hum then return end
-    pcall(function() hum.AutoRotate = true end)
+    if antiaim then
+        task.wait(0.2)
+        startAntiAim()
+    end
 end)
 LP.CharacterRemoving:Connect(function()
-    spinbotHum = nil
+    stopAntiAim()
 end)
 Players.PlayerRemoving:Connect(function(plr)
     if plr.Character then
@@ -1299,7 +1458,11 @@ Players.PlayerRemoving:Connect(function(plr)
 end)
 local function shutdown()
     silentAim = false
-    spinbot = false
+    antiaim = false
+    pcall(stopAntiAim)
+    ghostEnabled = false
+    ghostOrigin = nil
+    ghostVisual = nil
     bhop = false
     for key in pairs(loopTokens) do loopTokens[key] = nil end
     ESP.Enabled = false
@@ -1307,6 +1470,7 @@ local function shutdown()
     pcall(invDestroyAll)
     pcall(destroyFovCircle)
     pcall(destroyTargetLine)
+    pcall(destroyTracers)
     instantReload = false
     rapidFire = false
     fullAuto = false
@@ -1318,7 +1482,7 @@ local function shutdown()
     pcall(function()
         local pg = LP:FindFirstChildOfClass("PlayerGui")
         if not pg then return end
-        for _, name in ipairs({ "RickHubFOV", "RickHubTargetLine" }) do
+        for _, name in ipairs({ "RickHubFOV", "RickHubTargetLine", "RickHubTracers" }) do
             local gui = pg:FindFirstChild(name)
             if gui then gui:Destroy() end
         end
@@ -1326,5 +1490,5 @@ local function shutdown()
     pcall(function() Window:Destroy() end)
 end
 getgenv().__UrbanReloadShutdown = shutdown
-print("[RickHub] v2.1.4 loaded - tabs: Combat, Silent Aim, ESP Inventario, Teleport, Movement")
-notify("Rick Hub free v2.1.4", "Urban Reload listo: Silent Aim + Auto Shoot activos.")
+print("[RickHub] v2.1.5 loaded - Silent Aim + Tracers + Auto Shoot + Ghost + Anti-Aim + ESP Inventario")
+notify("Rick Hub free v2.1.5", "Tracers rojos, Auto Shoot, Ghost, Anti-Aim y ESP listos.")
