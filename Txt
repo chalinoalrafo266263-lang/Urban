@@ -1,5 +1,6 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -52,6 +53,9 @@ local ghostOrigin = nil
 local ghostVisual = nil
 local tpMode = false
 local tpMaxDistance = 6
+local ghostTweenDist = 12
+local tpTweenEnabled = false
+local tpTweenTime = 0.6
 local fullbright = false
 local instantReload = false
 local rapidFire = false
@@ -627,6 +631,25 @@ local function invEnsure(model)
     return b
 end
 
+local RARITY_GREEN = Color3.fromRGB(60, 220, 100)
+local RARITY_PURPLE = Color3.fromRGB(170, 85, 255)
+local RARITY_GOLD = Color3.fromRGB(255, 200, 40)
+local function rarityColor(tool)
+    local t = ""
+    if tool then
+        local r = tool:GetAttribute("Rarity") or tool:GetAttribute("rarity") or tool:GetAttribute("RarityTier")
+        if type(r) == "string" then t = r end
+    end
+    if t == "" and tool then t = tool.Name end
+    t = string.lower(t)
+    if t:find("legend") or t:find("mythic") or t:find("mitic") or t:find("dorad") or t:find("gold") then
+        return RARITY_GOLD
+    end
+    if t:find("epic") or t:find("rare") or t:find("raro") or t:find("purple") or t:find("morad") or t:find("violet") or t:find("elite") then
+        return RARITY_PURPLE
+    end
+    return RARITY_GREEN
+end
 local function invUpdateEntry(b, displayName, char)
     local hum = char:FindFirstChildOfClass("Humanoid")
     local tool = char:FindFirstChildOfClass("Tool")
@@ -637,6 +660,7 @@ local function invUpdateEntry(b, displayName, char)
     b.weapon.Visible = ESP.ShowWeapon and tool ~= nil
     if tool then
         b.weapon.Text = tool.Name
+        b.weapon.TextColor3 = rarityColor(tool)
     end
     b.health.Visible = ESP.ShowHealth and hum ~= nil
     if hum and ESP.ShowHealth then
@@ -797,7 +821,6 @@ RunService.Stepped:Connect(function()
     if not ghostEnabled then return end
     local hrp = getHrp()
     if not hrp or not ghostOrigin then return end
-    ghostVisual = hrp.CFrame
     hrp.CFrame = ghostOrigin
 end)
 RunService.Heartbeat:Connect(function()
@@ -806,6 +829,346 @@ RunService.Heartbeat:Connect(function()
     if not hrp or not ghostVisual then return end
     hrp.CFrame = ghostVisual
 end)
+-- ===== RickHub GUIs flotantes: Ghost Mode + Tween TP + Puertas/Ventanas =====
+local ghostGuiPanel, ghostStatus
+local tpGuiPanel, tpStatus
+local buildGhostGui, buildTpGui
+local ghostProxyVal = Instance.new("CFrameValue")
+ghostProxyVal.Name = "RickHubGhostProxy"
+local ghostProxyConn, ghostTween
+local doorsEnabled = false
+local removedDoors = {}
+local doorWatcher = nil
+local DOOR_KEYWORDS = { "door", "puerta", "window", "ventana", "glass", "cristal" }
+local function camFlat()
+    local cam = Workspace.CurrentCamera
+    if not cam then return Vector3.new(0, 0, -1) end
+    local look = cam.CFrame.LookVector
+    local f = Vector3.new(look.X, 0, look.Z)
+    if f.Magnitude < 0.01 then return Vector3.new(0, 0, -1) end
+    return f.Unit
+end
+local function ghostDirFromInput(kind)
+    local fwd = camFlat()
+    local right = Vector3.new(-fwd.Z, 0, fwd.X)
+    if kind == "F" then return fwd end
+    if kind == "B" then return -fwd end
+    if kind == "L" then return -right end
+    if kind == "R" then return right end
+    return nil
+end
+local function ghostTweenMove(kind)
+    if not ghostEnabled then return end
+    local dir = ghostDirFromInput(kind)
+    local cur = ghostVisual
+    if not dir or not cur then return end
+    local target = CFrame.new(cur.Position + dir * ghostTweenDist) * cur.Rotation
+    if ghostTween then ghostTween:Cancel() ghostTween = nil end
+    if ghostProxyConn then ghostProxyConn:Disconnect() ghostProxyConn = nil end
+    ghostProxyVal.Value = cur
+    ghostProxyConn = ghostProxyVal.Changed:Connect(function(v)
+        ghostVisual = v
+    end)
+    ghostTween = TweenService:Create(ghostProxyVal, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Value = target })
+    ghostTween:Play()
+end
+local function nameMatchesDoor(n)
+    local t = string.lower(tostring(n or ""))
+    for _, k in ipairs(DOOR_KEYWORDS) do
+        if t:find(k, 1, true) then return true end
+    end
+    return false
+end
+local function notInCharacter(obj)
+    local p = obj.Parent
+    while p do
+        if Players:GetPlayerFromCharacter(p) then return false end
+        p = p.Parent
+    end
+    return true
+end
+local function removeDoorObj(obj)
+    if removedDoors[obj] ~= nil then return end
+    removedDoors[obj] = obj.Parent
+    pcall(function() obj.Parent = nil end)
+end
+local function removeDoorsAll()
+    local n = 0
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if (obj:IsA("BasePart") or obj:IsA("Model")) and nameMatchesDoor(obj.Name) and notInCharacter(obj) then
+            removeDoorObj(obj)
+            n = n + 1
+        end
+    end
+    return n
+end
+local function restoreDoorsAll()
+    for obj, parent in pairs(removedDoors) do
+        if obj then pcall(function() obj.Parent = parent end) end
+    end
+    removedDoors = {}
+end
+local function setDoorsEnabled(v)
+    doorsEnabled = v
+    if v then
+        local n = removeDoorsAll()
+        if doorWatcher then doorWatcher:Disconnect() doorWatcher = nil end
+        doorWatcher = Workspace.DescendantAdded:Connect(function(obj)
+            if doorsEnabled and (obj:IsA("BasePart") or obj:IsA("Model")) and nameMatchesDoor(obj.Name) and notInCharacter(obj) then
+                task.defer(removeDoorObj, obj)
+            end
+        end)
+        notify("Doors & Windows", "Eliminadas (" .. n .. "). Ver y disparar a traves.")
+    else
+        if doorWatcher then doorWatcher:Disconnect() doorWatcher = nil end
+        restoreDoorsAll()
+        notify("Doors & Windows", "Restauradas.")
+    end
+end
+local function makeFloatGui(name, titleText, w, h, x, y)
+    local pg = LP:FindFirstChildOfClass("PlayerGui")
+    if not pg then return nil, nil, nil end
+    local old = pg:FindFirstChild(name)
+    if old then old:Destroy() end
+    local g = Instance.new("ScreenGui")
+    g.Name = name
+    g.ResetOnSpawn = false
+    g.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    g.DisplayOrder = 20
+    g.Parent = pg
+    local panel = Instance.new("Frame")
+    panel.Size = UDim2.fromOffset(w, h)
+    panel.Position = UDim2.new(0, x, 0, y)
+    panel.BackgroundColor3 = Color3.fromRGB(16, 16, 22)
+    panel.BackgroundTransparency = 0.06
+    panel.BorderSizePixel = 0
+    panel.Active = true
+    panel.Parent = g
+    local c1 = Instance.new("UICorner")
+    c1.CornerRadius = UDim.new(0, 10)
+    c1.Parent = panel
+    local s1 = Instance.new("UIStroke")
+    s1.Color = Color3.fromHex('#30ff6a')
+    s1.Thickness = 1.5
+    s1.Transparency = 0.35
+    s1.Parent = panel
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 28)
+    title.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
+    title.BorderSizePixel = 0
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 13
+    title.TextColor3 = Color3.fromHex('#30ff6a')
+    title.Text = titleText
+    title.Parent = panel
+    local c2 = Instance.new("UICorner")
+    c2.CornerRadius = UDim.new(0, 10)
+    c2.Parent = title
+    return g, panel, title
+end
+local function makeDraggable(panel, handle)
+    local dragging, dragStart, startPos = false, nil, nil
+    handle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = panel.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            panel.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+local function panelButton(panel, x, y, w, h, label, onClick, accent)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.fromOffset(w, h)
+    btn.Position = UDim2.new(0, x, 0, y)
+    btn.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
+    btn.BorderSizePixel = 0
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 11
+    btn.TextColor3 = accent and Color3.fromHex('#30ff6a') or Color3.fromRGB(220, 220, 230)
+    btn.Text = label
+    btn.Parent = panel
+    local bc = Instance.new("UICorner")
+    bc.CornerRadius = UDim.new(0, 8)
+    bc.Parent = btn
+    btn.Activated:Connect(onClick)
+    return btn
+end
+local function statusLabel(panel, y)
+    local lab = Instance.new("TextLabel")
+    lab.Size = UDim2.new(1, -12, 0, 16)
+    lab.Position = UDim2.new(0, 6, 0, y)
+    lab.BackgroundTransparency = 1
+    lab.Font = Enum.Font.Gotham
+    lab.TextSize = 11
+    lab.Text = ""
+    lab.TextColor3 = Color3.fromRGB(255, 90, 90)
+    lab.Parent = panel
+    return lab
+end
+local function setStatus(lab, on, txtOn, txtOff)
+    if lab then
+        lab.Text = on and txtOn or txtOff
+        lab.TextColor3 = on and Color3.fromRGB(60, 220, 100) or Color3.fromRGB(255, 90, 90)
+    end
+end
+local function setGhostStatus(on)
+    setStatus(ghostStatus, on, "STATUS: ON", "STATUS: OFF")
+end
+local function setGhostEnabled(v)
+    ghostEnabled = v
+    if v then
+        local hrp = getHrp()
+        if hrp then
+            ghostOrigin = hrp.CFrame
+            ghostVisual = hrp.CFrame
+        end
+        buildGhostGui()
+        setGhostStatus(true)
+        notify("Ghost Mode", "ON: pad/WASD mueven con tween. Tu real sigue en el ancla.")
+    else
+        if ghostTween then ghostTween:Cancel() ghostTween = nil end
+        if ghostProxyConn then ghostProxyConn:Disconnect() ghostProxyConn = nil end
+        ghostOrigin = nil
+        ghostVisual = nil
+        setGhostStatus(false)
+        notify("Ghost Mode", "OFF")
+    end
+end
+function buildGhostGui()
+    if ghostGuiPanel and ghostGuiPanel.Parent then return end
+    local g, panel, title = makeFloatGui("RickHubGhostGui", "GHOST MODE", 158, 192, 10, 160)
+    if not panel then return end
+    makeDraggable(panel, title)
+    panelButton(panel, 6, 32, 146, 28, "ACTIVATE", function()
+        setGhostEnabled(not ghostEnabled)
+    end, true)
+    ghostStatus = statusLabel(panel, 62)
+    panelButton(panel, 61, 84, 36, 28, "UP", function() ghostTweenMove("F") end)
+    panelButton(panel, 14, 118, 36, 28, "LEFT", function() ghostTweenMove("L") end)
+    panelButton(panel, 61, 118, 36, 28, "DOWN", function() ghostTweenMove("B") end)
+    panelButton(panel, 108, 118, 36, 28, "RIGHT", function() ghostTweenMove("R") end)
+    local hint = Instance.new("TextLabel")
+    hint.Size = UDim2.new(1, -12, 0, 28)
+    hint.Position = UDim2.new(0, 6, 0, 152)
+    hint.BackgroundTransparency = 1
+    hint.Font = Enum.Font.Gotham
+    hint.TextSize = 10
+    hint.TextColor3 = Color3.fromRGB(160, 160, 170)
+    hint.TextWrapped = true
+    hint.Text = "Pad o WASD = tween visual. Real: ancla."
+    hint.Parent = panel
+    ghostGuiPanel = panel
+    setGhostStatus(ghostEnabled)
+end
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp or not ghostEnabled then return end
+    local kc = input.KeyCode
+    local kind
+    if kc == Enum.KeyCode.W then kind = "F"
+    elseif kc == Enum.KeyCode.S then kind = "B"
+    elseif kc == Enum.KeyCode.A then kind = "L"
+    elseif kc == Enum.KeyCode.D then kind = "R" end
+    if kind then ghostTweenMove(kind) end
+end)
+local function tpTo(dest)
+    local myHrp = getHrp()
+    if not myHrp then return end
+    if not tpTweenEnabled then
+        myHrp.CFrame = dest
+        return
+    end
+    pcall(function()
+        myHrp.Anchored = true
+        local tw = TweenService:Create(myHrp, TweenInfo.new(math.max(tpTweenTime, 0.1), Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { CFrame = dest })
+        tw:Play()
+        tw.Completed:Once(function()
+            myHrp.Anchored = false
+        end)
+    end)
+end
+local function tpNearestPlayer()
+    local best, bestDist = nil, math.huge
+    local myHrp = getHrp()
+    if not myHrp then return end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LP and plr.Character then
+            local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local d = (hrp.Position - myHrp.Position).Magnitude
+                if d < bestDist then bestDist = d; best = hrp end
+            end
+        end
+    end
+    if best then
+        local dest = best.Position + Vector3.new(0, 3, 0)
+        if tpMode then
+            local to = dest - myHrp.Position
+            if to.Magnitude > tpMaxDistance then
+                dest = myHrp.Position + to.Unit * tpMaxDistance
+            end
+        end
+        tpTo(CFrame.new(dest))
+    end
+end
+local function tpRandomPlayer()
+    local list = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LP and plr.Character then table.insert(list, plr) end
+    end
+    if #list == 0 then return end
+    local plr = list[math.random(1, #list)]
+    local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+    local myHrp = getHrp()
+    if hrp and myHrp then
+        local dest = hrp.Position + Vector3.new(0, 3, 0)
+        if tpMode then
+            local to = dest - myHrp.Position
+            if to.Magnitude > tpMaxDistance then
+                dest = myHrp.Position + to.Unit * tpMaxDistance
+            end
+        end
+        tpTo(CFrame.new(dest))
+    end
+end
+local function tpDashForward()
+    local myHrp = getHrp()
+    if not myHrp then return end
+    tpTo(CFrame.new(myHrp.Position + camFlat() * tpMaxDistance))
+end
+local function setTpStatus(on)
+    setStatus(tpStatus, on, "TWEEN: ON", "TWEEN: OFF")
+end
+local function setTpTween(v)
+    tpTweenEnabled = v
+    setTpStatus(v)
+    notify("Tween TP", v and "ON: teleports con tween suave." or "OFF: teleports instantaneos.")
+end
+function buildTpGui()
+    if tpGuiPanel and tpGuiPanel.Parent then return end
+    local g, panel, title = makeFloatGui("RickHubTpGui", "TWEEN TP", 158, 172, 10, 366)
+    if not panel then return end
+    makeDraggable(panel, title)
+    panelButton(panel, 6, 32, 146, 28, "ACTIVATE", function()
+        setTpTween(not tpTweenEnabled)
+    end, true)
+    tpStatus = statusLabel(panel, 62)
+    panelButton(panel, 6, 84, 146, 24, "TP Nearest Player", tpNearestPlayer)
+    panelButton(panel, 6, 112, 146, 24, "TP Random Player", tpRandomPlayer)
+    panelButton(panel, 6, 140, 146, 24, "Dash Forward 6", tpDashForward)
+    tpGuiPanel = panel
+    setTpStatus(tpTweenEnabled)
+end
+buildGhostGui()
+buildTpGui()
 local CombatTab = Window:Tab({ Title = "Combat", Icon = "zap" })
 local RageTab = Window:Tab({ Title = "Silent Aim", Icon = "crosshair" })
 local EspTab = Window:Tab({ Title = "ESP Inventario", Icon = "eye" })
@@ -1115,7 +1478,7 @@ end)
 local autoShoot = false
 local autoShootDelay = 250
 local lastAutoShot = 0
-local autoShootFireX = 0.865
+local autoShootFireX = 0.92
 local autoShootFireY = 0.657
 local VirtualInputManager = game:GetService("VirtualInputManager")
 RunService.RenderStepped:Connect(function()
@@ -1286,7 +1649,7 @@ end })
 RageTab:Slider({ Title = "Auto Shoot Delay (ms)", Step = 50, Value = { Min = 50, Max = 1000, Default = 250 }, Callback = function(v)
     autoShootDelay = v
 end })
-RageTab:Slider({ Title = "Fire Button X (%)", Step = 1, Value = { Min = 0, Max = 100, Default = 87 }, Callback = function(v)
+RageTab:Slider({ Title = "Fire Button X (%)", Step = 1, Value = { Min = 0, Max = 100, Default = 92 }, Callback = function(v)
     autoShootFireX = v / 100
 end })
 RageTab:Slider({ Title = "Fire Button Y (%)", Step = 1, Value = { Min = 0, Max = 100, Default = 66 }, Callback = function(v)
@@ -1332,59 +1695,13 @@ EspTab:Slider({ Title = "Collect Radius (m)", Step = 1, Value = { Min = 5, Max =
 end })
 TpTab:Section({ Title = "Teleport" })
 TpTab:Toggle({ Title = "TP Mode (max 6 studs)", Value = false, Callback = function(v) tpMode = v end })
-TpTab:Button({ Title = "Teleport to Nearest Player", Callback = function()
-    local best, bestDist = nil, math.huge
-    local myHrp = getHrp()
-    if not myHrp then return end
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LP and plr.Character then
-            local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                local d = (hrp.Position - myHrp.Position).Magnitude
-                if d < bestDist then bestDist = d; best = hrp end
-            end
-        end
-    end
-    if best then
-        local dest = best.Position + Vector3.new(0, 3, 0)
-        if tpMode then
-            local to = dest - myHrp.Position
-            if to.Magnitude > tpMaxDistance then
-                dest = myHrp.Position + to.Unit * tpMaxDistance
-            end
-        end
-        myHrp.CFrame = CFrame.new(dest)
-    end
+TpTab:Toggle({ Title = "Tween TP", Value = false, Callback = function(v) setTpTween(v) end })
+TpTab:Slider({ Title = "TP Tween Time (ms)", Step = 100, Value = { Min = 200, Max = 3000, Default = 600 }, Callback = function(v)
+    tpTweenTime = v / 1000
 end })
-TpTab:Button({ Title = "Teleport to Random Player", Callback = function()
-    local list = {}
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LP and plr.Character then table.insert(list, plr) end
-    end
-    if #list == 0 then return end
-    local plr = list[math.random(1, #list)]
-    local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
-    local myHrp = getHrp()
-    if hrp and myHrp then
-        local dest = hrp.Position + Vector3.new(0, 3, 0)
-        if tpMode then
-            local to = dest - myHrp.Position
-            if to.Magnitude > tpMaxDistance then
-                dest = myHrp.Position + to.Unit * tpMaxDistance
-            end
-        end
-        myHrp.CFrame = CFrame.new(dest)
-    end
-end })
-TpTab:Button({ Title = "Dash Forward (6 studs)", Callback = function()
-    local myHrp = getHrp()
-    local cam = Workspace.CurrentCamera
-    if not myHrp or not cam then return end
-    local fwd = cam.CFrame.LookVector
-    fwd = Vector3.new(fwd.X, 0, fwd.Z)
-    if fwd.Magnitude > 0.01 then fwd = fwd.Unit end
-    myHrp.CFrame = CFrame.new(myHrp.Position + fwd * tpMaxDistance)
-end })
+TpTab:Button({ Title = "Teleport to Nearest Player", Callback = function() tpNearestPlayer() end })
+TpTab:Button({ Title = "Teleport to Random Player", Callback = function() tpRandomPlayer() end })
+TpTab:Button({ Title = "Dash Forward (6 studs)", Callback = function() tpDashForward() end })
 MoveTab:Section({ Title = "Movement" })
 MoveTab:Toggle({ Title = "Speed", Value = false, Callback = function(v)
     speedEnabled = v
@@ -1420,18 +1737,16 @@ MoveTab:Toggle({ Title = "Bunny Hop", Value = false, Callback = function(v)
     end
 end })
 MoveTab:Toggle({ Title = "Ghost Mode", Value = false, Callback = function(v)
-    ghostEnabled = v
-    if v then
-        local hrp = getHrp()
-        if hrp then
-            ghostOrigin = hrp.CFrame
-            ghostVisual = hrp.CFrame
-        end
-    else
-        ghostOrigin = nil
-        ghostVisual = nil
-    end
+    setGhostEnabled(v)
 end })
+MoveTab:Slider({ Title = "Ghost Tween Distance (studs)", Step = 1, Value = { Min = 4, Max = 50, Default = 12 }, Callback = function(v)
+    ghostTweenDist = v
+end })
+MoveTab:Section({ Title = "World" })
+MoveTab:Toggle({ Title = "Remove Doors & Windows", Value = true, Callback = function(v)
+    setDoorsEnabled(v)
+end })
+task.defer(setDoorsEnabled, true)
 
 UserInputService.JumpRequest:Connect(function()
     if not bhop then return end
@@ -1471,6 +1786,12 @@ local function shutdown()
     pcall(destroyFovCircle)
     pcall(destroyTargetLine)
     pcall(destroyTracers)
+    pcall(function()
+        if ghostTween then ghostTween:Cancel() end
+        if ghostProxyConn then ghostProxyConn:Disconnect() end
+        if doorWatcher then doorWatcher:Disconnect() doorWatcher = nil end
+        restoreDoorsAll()
+    end)
     instantReload = false
     rapidFire = false
     fullAuto = false
@@ -1482,7 +1803,7 @@ local function shutdown()
     pcall(function()
         local pg = LP:FindFirstChildOfClass("PlayerGui")
         if not pg then return end
-        for _, name in ipairs({ "RickHubFOV", "RickHubTargetLine", "RickHubTracers" }) do
+        for _, name in ipairs({ "RickHubFOV", "RickHubTargetLine", "RickHubTracers", "RickHubGhostGui", "RickHubTpGui" }) do
             local gui = pg:FindFirstChild(name)
             if gui then gui:Destroy() end
         end
@@ -1490,5 +1811,5 @@ local function shutdown()
     pcall(function() Window:Destroy() end)
 end
 getgenv().__UrbanReloadShutdown = shutdown
-print("[RickHub] v2.1.5 loaded - Silent Aim + Tracers + Auto Shoot + Ghost + Anti-Aim + ESP Inventario")
-notify("Rick Hub free v2.1.5", "Tracers rojos, Auto Shoot, Ghost, Anti-Aim y ESP listos.")
+print("[RickHub] v2.2.0 loaded - Ghost GUI, Tween TP GUI, ESP Rareza, Fire Button 92/66, No Doors/Windows")
+notify("Rick Hub free v2.2.0", "Ghost GUI + Tween TP GUI, ESP rareza, sin puertas/ventanas.")
