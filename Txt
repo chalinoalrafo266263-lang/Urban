@@ -1477,32 +1477,63 @@ end)
 
 local autoShoot = false
 local autoShootDelay = 250
+local autoShootHold = 60
+local autoShootMethod = "Both"
+local autoShootRequireTarget = true
 local lastAutoShot = 0
 local autoShootFireX = 0.92
 local autoShootFireY = 0.657
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local function autoShootTap()
+    local cam = Workspace.CurrentCamera
+    if not cam then return end
+    local vp = cam.ViewportSize
+    local fx = math.floor(vp.X * autoShootFireX + 0.5)
+    local fy = math.floor(vp.Y * autoShootFireY + 0.5)
+    local hold = math.max(autoShootHold, 20) / 1000
+    pcall(function()
+        VirtualInputManager:SendMouseButtonEvent(fx, fy, 0, true, game, 0)
+    end)
+    task.delay(hold, function()
+        pcall(function()
+            VirtualInputManager:SendMouseButtonEvent(fx, fy, 0, false, game, 0)
+        end)
+    end)
+end
+local function autoShootToolFire()
+    local char = LP.Character
+    local tool = char and char:FindFirstChildOfClass("Tool")
+    if not tool then return end
+    local hold = math.max(autoShootHold, 20) / 1000
+    pcall(function() tool:Activate() end)
+    task.delay(hold, function()
+        pcall(function() tool:Deactivate() end)
+    end)
+end
+local function autoShootFireOnce()
+    if autoShootMethod == "Tool Activate" then
+        autoShootToolFire()
+    elseif autoShootMethod == "Both" then
+        autoShootTap()
+        autoShootToolFire()
+    else
+        autoShootTap()
+    end
+end
 RunService.RenderStepped:Connect(function()
     if not autoShoot then return end
     local now = os.clock()
     if now - lastAutoShot < (autoShootDelay / 1000) then return end
     local cam = Workspace.CurrentCamera
     if not cam then return end
-    local pos = silentAimTarget()
-    if not pos then return end
-    local sp, onScreen = cam:WorldToViewportPoint(pos)
-    if not onScreen or sp.Z <= 0 then return end
+    if autoShootRequireTarget then
+        local pos = silentAimTarget()
+        if not pos then return end
+        local sp, onScreen = cam:WorldToViewportPoint(pos)
+        if not onScreen or sp.Z <= 0 then return end
+    end
     lastAutoShot = now
-    local vp = cam.ViewportSize
-    local fx = vp.X * autoShootFireX
-    local fy = vp.Y * autoShootFireY
-    pcall(function()
-        VirtualInputManager:SendMouseButtonEvent(fx, fy, 0, true, game, 0)
-        task.delay(0.05, function()
-            pcall(function()
-                VirtualInputManager:SendMouseButtonEvent(fx, fy, 0, false, game, 0)
-            end)
-        end)
-    end)
+    autoShootFireOnce()
 end)
 
 CombatTab:Section({ Title = "Weapon" })
@@ -1654,6 +1685,20 @@ RageTab:Slider({ Title = "Fire Button X (%)", Step = 1, Value = { Min = 0, Max =
 end })
 RageTab:Slider({ Title = "Fire Button Y (%)", Step = 1, Value = { Min = 0, Max = 100, Default = 66 }, Callback = function(v)
     autoShootFireY = v / 100
+end })
+RageTab:Dropdown({ Title = "Auto Shoot Method", Values = { "Button Click", "Tool Activate", "Both" }, Value = 3, Callback = function(v)
+    local m = (type(v) == "table" and v[1]) or v
+    autoShootMethod = tostring(m)
+end })
+RageTab:Slider({ Title = "Auto Shoot Hold (ms)", Step = 10, Value = { Min = 20, Max = 300, Default = 60 }, Callback = function(v)
+    autoShootHold = v
+end })
+RageTab:Toggle({ Title = "Auto Shoot Solo Con Target", Value = true, Callback = function(v)
+    autoShootRequireTarget = v
+end })
+RageTab:Button({ Title = "Test Fire (1 disparo)", Callback = function()
+    autoShootFireOnce()
+    notify("Auto Shoot", "Test enviado con metodo: " .. tostring(autoShootMethod))
 end })
 EspTab:Section({ Title = "ESP Inventario" })
 EspTab:Toggle({ Title = "ESP Enabled", Value = false, Callback = function(v)
@@ -1811,5 +1856,5 @@ local function shutdown()
     pcall(function() Window:Destroy() end)
 end
 getgenv().__UrbanReloadShutdown = shutdown
-print("[RickHub] v2.2.0 loaded - Ghost GUI, Tween TP GUI, ESP Rareza, Fire Button 92/66, No Doors/Windows")
-notify("Rick Hub free v2.2.0", "Ghost GUI + Tween TP GUI, ESP rareza, sin puertas/ventanas.")
+print("[RickHub] v2.2.1 loaded - FIX Auto Shoot (click real: VIM + Tool Activate)")
+notify("Rick Hub free v2.2.1", "Auto Shoot corregido: metodo Both + Test Fire en Silent Aim.")
