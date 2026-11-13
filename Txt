@@ -1,4 +1,4 @@
--- RickHub Urban Reload v2.2.1 -- Base-95 Obfuscated https://discord.gg/xGN6TuUQz
+-- RickHub Urban Reload v2.2.1 -- Base-95 Obfuscated
 local _T = {
   "!-!0!$!\"!- @ p!-!\"!:!&!3!4 @ ] @!(!\"!.!& Z g!&!5 s!&!3!7!*!$!& H B p!-!\"!:!&",
   "!3!4 B I *!-!0!$!\"!- @ r!6!/ s!&!3!7!*!$!& @ ] @!(!\"!.!& Z g!&!5 s!&!3!7!*!$!&",
